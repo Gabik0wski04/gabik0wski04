@@ -47,6 +47,43 @@
     const h = Math.sin(dla / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dlo / 2) ** 2;
     return 2 * R * Math.asin(Math.sqrt(h));
   }
+  // ---------- route corrections: segment i (stop i -> stop i+1) replaced by points clicked on the map ----------
+  async function loadFixes() {
+    let base = {};
+    try { base = await (await fetch('geo/fixes.json', { cache: 'no-cache' })).json(); } catch (e) {}
+    let mine = {};
+    try { mine = JSON.parse(localStorage.getItem('routeFixes') || '{}'); } catch (e) {}
+    const out = JSON.parse(JSON.stringify(base));
+    for (const k in mine) out[k] = Object.assign(out[k] || {}, mine[k]);
+    return out;
+  }
+  function saveMine(key, segs) {
+    let mine = {};
+    try { mine = JSON.parse(localStorage.getItem('routeFixes') || '{}'); } catch (e) {}
+    if (segs && Object.keys(segs).length) mine[key] = segs; else delete mine[key];
+    try { localStorage.setItem('routeFixes', JSON.stringify(mine)); } catch (e) {}
+    return mine;
+  }
+  function applyFix(g, segs) {
+    if (!segs || !Object.keys(segs).length) return g;
+    const G0 = prep(g), pts = [], cuts = [];
+    let d = 0;
+    const between = (a, b) => { const o = []; for (let i = 0; i < G0.pts.length; i++) if (G0.cum[i] > a && G0.cum[i] < b) o.push(G0.pts[i]); return o; };
+    const S = g.s;
+    pts.push(at(G0, 0).p);
+    for (let i = 0; i < S.length; i++) {
+      const sp = at(G0, S[i][2]).p;
+      pts.push(sp); cuts.push(pts.length - 1);
+      if (i === S.length - 1) break;
+      const fx = segs[i];
+      if (fx && fx.length) fx.forEach(q => pts.push(q));
+      else between(S[i][2], S[i + 1][2]).forEach(q => pts.push(q));
+    }
+    between(S[S.length - 1][2], G0.len + 1).forEach(q => pts.push(q));
+    const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + hav(pts[i - 1], pts[i]));
+    return { p: pts, s: S.map((st, i) => [st[0], st[1], cum[cuts[i]]]), len: cum[cum.length - 1] };
+  }
+
   function prep(g) {
     const cum = [0];
     for (let i = 1; i < g.p.length; i++) cum.push(cum[i - 1] + hav(g.p[i - 1], g.p[i]));
@@ -228,6 +265,10 @@
 #film .fc{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:560px}
 #film .st{color:#9aa3b2;font-size:13px;text-align:center;min-height:18px;max-width:560px}
 #film .fin{background:#141922;border:1px solid #2a3240;color:#e8ecf2;border-radius:10px;padding:8px 10px;font:inherit}
+#fed{position:fixed;inset:0;z-index:60;background:#0b0d12;display:flex;flex-direction:column}
+#fed .fet{padding:10px;display:flex;flex-direction:column;gap:8px;align-items:center}
+#fed select{max-width:100%;background:#141922;color:#e8ecf2;border:1px solid #2a3240;border-radius:10px;padding:8px}
+#fed #emap{flex:1;min-height:300px}
 #filmmap{position:fixed;left:-20000px;top:0;width:540px;height:960px}`;
     document.head.appendChild(s);
   }
@@ -251,6 +292,7 @@
       <div class="fc"><input id="fnum" class="fin" style="width:72px" aria-label="Numer na tablicy"><input id="ftxt" class="fin" style="flex:1;min-width:180px" aria-label="Napis na tablicy">
         <button class="chip" id="fchg">Trasa zmieniona</button>
         <label class="chip" id="ffontl" style="cursor:pointer">Wczytaj czcionkę nazw<input type="file" id="ffont" accept=".otf,.ttf,.woff,.woff2" hidden></label></div>
+      <div class="fc"><button class="btn" id="fedit">✏️ Popraw trasę</button></div>
       <div class="fc"><button class="btn pri" id="fplay">▶ Odtwórz</button><button class="btn" id="frec">● Nagraj wideo</button><button class="btn" id="fx">Zamknij</button></div>`;
     document.body.appendChild(box);
     const md = document.createElement('div'); md.id = 'filmmap'; document.body.appendChild(md);
@@ -276,6 +318,7 @@
     kvGet('namefont').then(async v => { if (v && v.buf) { try { await useNameFont(v.buf); box.querySelector('#ffontl').firstChild.textContent = 'Czcionka: ' + v.name; } catch (e) {} } });
     box.querySelector('#fchg').onclick = e => { if (run) return; ui.changed = !ui.changed; e.target.classList.toggle('on', ui.changed); };
     box.querySelector('#fplay').onclick = () => start(false);
+    box.querySelector('#fedit').onclick = () => { if (!run && ui.G) editor(); };
     box.querySelector('#frec').onclick = () => start(true);
     try {
       await Promise.all([loadLib(), loadImg('tram', 'lib/sign_tram.png'), loadImg('bus', 'lib/sign_bus.png'),
@@ -284,7 +327,9 @@
       const geo = await (await fetch('geo/' + fn + '.json')).json();
       const g = geo[opts.dir + '/' + opts.vi];
       if (!g) { st('Brak przebiegu tej trasy w rozkładzie.'); return; }
-      ui.G = prep(g);
+      ui.raw = g; ui.fixKey = opts.line + '|' + opts.dir + '/' + opts.vi;
+      ui.fixes = await loadFixes();
+      ui.G = prep(applyFix(g, ui.fixes[ui.fixKey]));
     } catch (e) { st('Nie udało się wczytać mapy.'); return; }
     ui.num = opts.line; ui.text = ledText(opts.line, opts.variant.stops[opts.variant.stops.length - 1]);
     box.querySelector('#fnum').value = ui.num; box.querySelector('#ftxt').value = ui.text;
@@ -436,7 +481,66 @@
     ac.close(); run = null; if (ui) ui.scene = {};
   }
 
+  // route editor: pick a segment between two stops, click the real path on the map, save
+  function editor() {
+    const o = ui.opts, S = ui.raw.s, names = o.variant.stops;
+    let segs = Object.assign({}, (ui.fixes[ui.fixKey] || {})), cur = 0, wps = (segs[0] || []).slice();
+    const ed = document.createElement('div'); ed.id = 'fed';
+    ed.innerHTML = `<div class="fet"><select id="eseg">${S.slice(0, -1).map((x, i) => `<option value="${i}">${i + 1}. ${esc(names[i])} → ${esc(names[i + 1])}${segs[i] ? ' ✓' : ''}</option>`).join('')}</select>
+      <div class="fc"><button class="chip" id="eundo">Cofnij punkt</button><button class="chip" id="eclr">Wyczyść odcinek</button>
+      <button class="btn pri" id="esave">Zapisz odcinek</button><button class="btn" id="eexp">Wyślij poprawki</button><button class="btn" id="ex">Gotowe</button></div>
+      <div class="st" id="est">Wybierz odcinek, potem klikaj na mapie po kolei punkty, którędy naprawdę jedzie pojazd.</div></div><div id="emap"></div>`;
+    document.body.appendChild(ed);
+    const em = new maplibregl.Map({ container: ed.querySelector('#emap'), style: (window.Film && Film.styleOverride) || STYLES[ui.style], attributionControl: { compact: true } });
+    const fc = pts => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: pts.map(p => [p[1], p[0]]) } });
+    const draw = () => {
+      if (!em.getSource('r')) return;
+      const G = prep(applyFix(ui.raw, segs));
+      em.getSource('r').setData(fc(G.pts));
+      em.getSource('w').setData(fc([[S[cur][0], S[cur][1]], ...wps, [S[cur + 1][0], S[cur + 1][1]]]));
+      em.getSource('wp').setData({ type: 'FeatureCollection', features: wps.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p[1], p[0]] } })) });
+      em.getSource('ss').setData({ type: 'FeatureCollection', features: [S[cur], S[cur + 1]].map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p[1], p[0]] } })) });
+    };
+    const focus = () => { const b = new maplibregl.LngLatBounds([S[cur][1], S[cur][0]], [S[cur][1], S[cur][0]]); b.extend([S[cur + 1][1], S[cur + 1][0]]); wps.forEach(p => b.extend([p[1], p[0]])); em.fitBounds(b, { padding: 80, maxZoom: 17, duration: 0 }); };
+    em.on('load', () => {
+      em.addSource('r', { type: 'geojson', data: fc([]) }); em.addSource('w', { type: 'geojson', data: fc([]) });
+      em.addSource('wp', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      em.addSource('ss', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      em.addSource('st', { type: 'geojson', data: { type: 'FeatureCollection', features: S.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p[1], p[0]] } })) } });
+      em.addLayer({ id: 'r', type: 'line', source: 'r', paint: { 'line-color': '#ee1c25', 'line-width': 4, 'line-opacity': 0.8 } });
+      em.addLayer({ id: 'w', type: 'line', source: 'w', paint: { 'line-color': '#ffd400', 'line-width': 5 } });
+      em.addLayer({ id: 'st', type: 'circle', source: 'st', paint: { 'circle-radius': 5, 'circle-color': '#fff', 'circle-stroke-color': '#123b96', 'circle-stroke-width': 2 } });
+      em.addLayer({ id: 'ss', type: 'circle', source: 'ss', paint: { 'circle-radius': 9, 'circle-color': '#ffd400', 'circle-stroke-color': '#000', 'circle-stroke-width': 2 } });
+      em.addLayer({ id: 'wp', type: 'circle', source: 'wp', paint: { 'circle-radius': 5, 'circle-color': '#ffd400', 'circle-stroke-color': '#000', 'circle-stroke-width': 1.5 } });
+      draw(); focus();
+    });
+    const est = t => { ed.querySelector('#est').textContent = t; };
+    em.on('click', e => { wps.push([+e.lngLat.lat.toFixed(6), +e.lngLat.lng.toFixed(6)]); draw(); est(`Punktów na tym odcinku: ${wps.length}. Kliknij „Zapisz odcinek”, gdy skończysz.`); });
+    const sel = ed.querySelector('#eseg');
+    sel.onchange = () => { cur = +sel.value; wps = (segs[cur] || []).slice(); draw(); focus(); est(segs[cur] ? 'Ten odcinek ma już poprawkę – możesz ją zmienić.' : 'Klikaj na mapie punkty trasy między żółtymi przystankami.'); };
+    ed.querySelector('#eundo').onclick = () => { wps.pop(); draw(); };
+    ed.querySelector('#eclr').onclick = () => { wps = []; delete segs[cur]; saveMine(ui.fixKey, segs); sel.options[cur].text = sel.options[cur].text.replace(' ✓', ''); draw(); est('Odcinek przywrócony do przebiegu z rozkładu.'); };
+    ed.querySelector('#esave').onclick = () => {
+      if (!wps.length) { est('Najpierw kliknij na mapie punkty trasy.'); return; }
+      segs[cur] = wps.slice(); saveMine(ui.fixKey, segs);
+      if (!sel.options[cur].text.endsWith(' ✓')) sel.options[cur].text += ' ✓';
+      draw(); est('Zapisano w tej przeglądarce. Filmik już jedzie poprawioną trasą.');
+    };
+    ed.querySelector('#eexp').onclick = async () => {
+      let mine = {}; try { mine = JSON.parse(localStorage.getItem('routeFixes') || '{}'); } catch (e) {}
+      if (!Object.keys(mine).length) { est('Nie masz jeszcze żadnych zapisanych poprawek.'); return; }
+      const blob = new Blob([JSON.stringify(mine)], { type: 'application/json' });
+      await saveFile('poprawki-tras.json', blob);
+      est('Zapisano plik poprawki-tras.json – wyślij go w czacie, a wbuduję poprawki na stałe.');
+    };
+    ed.querySelector('#ex').onclick = async () => {
+      em.remove(); ed.remove();
+      ui.fixes = await loadFixes(); ui.G = prep(applyFix(ui.raw, ui.fixes[ui.fixKey])); makeMap();
+    };
+  }
+
   function close() {
+    const fe = document.getElementById('fed'); if (fe) fe.remove();
     if (run) { run.stop = true; run.aud.sources.forEach(x => { try { x.stop(); } catch (e) {} }); }
     if (!ui) { const b = document.getElementById('film'); if (b) b.remove(); return; }
     cancelAnimationFrame(ui.raf);
