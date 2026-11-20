@@ -83,6 +83,7 @@
   function applyFix(g, segs) {
     if (!segs || !Object.keys(segs).length) return g;
     const G0 = prep(g), pts = [], cuts = [], S = g.s, n = S.length;
+    if (!S.length) return g;
     const between = (a, b) => { const o = []; for (let i = 0; i < G0.pts.length; i++) if (G0.cum[i] > a && G0.cum[i] < b) o.push(G0.pts[i]); return o; };
     const D = [], P = [];
     for (let i = 0; i < n; i++) {
@@ -100,7 +101,17 @@
     }
     if (!segs['p' + (n - 1)]) between(D[n - 1], G0.len + 1).forEach(q => pts.push(q));
     const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + hav(pts[i - 1], pts[i]));
-    return { p: pts, s: S.map((st, i) => [P[i][0], P[i][1], cum[cuts[i]]]), len: cum[cum.length - 1] };
+    const out = [], G1 = { pts, cum, len: cum[cum.length - 1] };
+    for (let i = 0; i < n; i++) {
+      out.push([P[i][0], P[i][1], cum[cuts[i]]]);
+      const add = i < n - 1 && segs['a' + i];
+      if (add && add.length) {              // stops added by the user inside segment i, ordered along the route
+        const lo = cum[cuts[i]], hi = cum[cuts[i + 1]];
+        add.map(a => [a.q[0], a.q[1], proj(G1, a.q, lo, hi), { n: a.n, r: a.r ? 1 : 0 }])
+          .sort((x, y) => x[2] - y[2]).forEach(x => out.push(x));
+      }
+    }
+    return { p: pts, s: out, len: G1.len };
   }
 
   function prep(g) {
@@ -292,6 +303,9 @@
 #film .fin{background:#141922;border:1px solid #2a3240;color:#e8ecf2;border-radius:10px;padding:8px 10px;font:inherit}
 #fed{position:fixed;inset:0;z-index:60;background:#0b0d12;display:flex;flex-direction:column}
 #fed .fet{padding:10px;display:flex;flex-direction:column;gap:8px;align-items:center}
+#fed input[type=text]{background:#141922;color:#e8ecf2;border:1px solid #2a3240;border-radius:10px;padding:8px;min-width:0;flex:1}
+#fed .fadd{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:center;width:100%;max-width:640px}
+#fed .fadded{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
 #fed select{max-width:100%;background:#141922;color:#e8ecf2;border:1px solid #2a3240;border-radius:10px;padding:8px}
 #fed #emap{flex:1;min-height:300px}
 #filmmap{position:fixed;left:-20000px;top:0;width:540px;height:960px}`;
@@ -431,8 +445,13 @@
     const introBuf = (await decodeAll(ac, [o.intro]))[0];
     let chgBuf = null;
     if (ui.changed) { try { chgBuf = await ac.decodeAudioData(await (await fetch('lib/trasa_zmieniona.mp3')).arrayBuffer()); } catch (e) {} }
-    const stopBufs = await decodeAll(ac, o.items.map(x => x.rec));
-    const zoneBufs = await decodeAll(ac, o.items.map(x => x.zone || null));
+    const items = [];
+    { let k = 0; ui.G.stops.forEach(st => {
+        if (st[3]) items.push({ name: st[3].n, req: st[3].r, rec: (window.recFor ? window.recFor(st[3].n, st[3].r) : null), zone: null });
+        else items.push(o.items[k++] || { name: '' });
+      }); }
+    const stopBufs = await decodeAll(ac, items.map(x => x.rec));
+    const zoneBufs = await decodeAll(ac, items.map(x => x.zone || null));
     let rec = null, chunks = [], mime = '';
     if (record) {
       const dest = ac.createMediaStreamDestination(); gain.connect(dest);
@@ -466,8 +485,8 @@
       ui.scene.head = [s0[0], s0[1]]; ui.scene.km = 0;
       // 3. stop by stop
       for (let i = 0; i < G.stops.length && !run.stop; i++) {
-        const name = o.items[i] ? o.items[i].name : '';
-        ui.scene.sign = { name, req: o.items[i] && o.items[i].req, zone: !!(o.items[i] && o.items[i].zone), t0: now() };
+        const name = items[i] ? items[i].name : '';
+        ui.scene.sign = { name, req: items[i] && items[i].req, zone: !!(items[i] && items[i].zone), t0: now() };
         const ts = now();
         await playBuf(aud, stopBufs[i]);
         if (zoneBufs[i]) { await sleep(300); await playBuf(aud, zoneBufs[i]); }   // last stop in this ticket zone
@@ -511,9 +530,12 @@
     const o = ui.opts, S = ui.raw.s, names = o.variant.stops;
     let segs = Object.assign({}, (ui.fixes[ui.fixKey] || {})), cur = 0, wps = (segs[0] || []).slice();
     const ed = document.createElement('div'); ed.id = 'fed';
-    ed.innerHTML = `<div class="fet"><select id="eseg">${S.slice(0, -1).map((x, i) => `<option value="${i}">${i + 1}. ${esc(names[i])} → ${esc(names[i + 1])}${segs[i] || segs['p' + i] || segs['p' + (i + 1)] ? ' ✓' : ''}</option>`).join('')}</select>
+    ed.innerHTML = `<div class="fet"><select id="eseg">${S.slice(0, -1).map((x, i) => `<option value="${i}">${i + 1}. ${esc(names[i])} → ${esc(names[i + 1])}${segs[i] || segs['p' + i] || segs['p' + (i + 1)] || segs['a' + i] ? ' ✓' : ''}</option>`).join('')}</select>
       <div class="fc"><button class="chip" id="eundo">Cofnij punkt</button><button class="chip" id="eclr">Wyczyść odcinek</button><button class="chip" id="eprs">Przywróć przystanki</button>
       <button class="btn pri" id="esave">Zapisz odcinek</button><button class="btn" id="eexp">Wyślij poprawki</button><button class="btn" id="ex">Gotowe</button></div>
+      <div class="fadd"><input type="text" id="ename" list="enames" placeholder="Nazwa nowego przystanku"><datalist id="enames"></datalist>
+        <label class="chip"><input type="checkbox" id="ereq"> N/Ż</label><button class="chip" id="eadd">➕ Dodaj przystanek</button></div>
+      <div class="fadded" id="eadded"></div>
       <div class="st" id="est">Wybierz odcinek, potem klikaj na mapie po kolei punkty, którędy naprawdę jedzie pojazd. Żółte kółka przystanków możesz przeciągnąć w inne miejsce.</div></div><div id="emap"></div>`;
     document.body.appendChild(ed);
     const em = new maplibregl.Map({ container: ed.querySelector('#emap'), style: (window.Film && Film.styleOverride) || STYLES[ui.style], attributionControl: { compact: true } });
@@ -537,7 +559,8 @@
       em.getSource('r').setData(fc(G.pts));
       em.getSource('w').setData(fc([pos(cur), ...wps, pos(cur + 1)]));
       em.getSource('wp').setData({ type: 'FeatureCollection', features: wps.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p[1], p[0]] } })) });
-      em.getSource('st').setData({ type: 'FeatureCollection', features: S.map((x, i) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [pos(i)[1], pos(i)[0]] } })) });
+      em.getSource('st').setData({ type: 'FeatureCollection', features: S.map((x, i) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [pos(i)[1], pos(i)[0]] } }))
+        .concat(Object.keys(segs).filter(k => k[0] === 'a').flatMap(k => segs[k]).map(a => ({ type: 'Feature', properties: { add: 1 }, geometry: { type: 'Point', coordinates: [a.q[1], a.q[0]] } }))) });
       mk.forEach((m, k) => m.setLngLat([pos(cur + k)[1], pos(cur + k)[0]]));
     };
     const focus = () => { const a = pos(cur), c = pos(cur + 1), b = new maplibregl.LngLatBounds([a[1], a[0]], [a[1], a[0]]); b.extend([c[1], c[0]]); wps.forEach(p => b.extend([p[1], p[0]])); em.fitBounds(b, { padding: 80, maxZoom: 17, duration: 0 }); };
@@ -548,15 +571,42 @@
       em.addSource('st', { type: 'geojson', data: { type: 'FeatureCollection', features: S.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p[1], p[0]] } })) } });
       em.addLayer({ id: 'r', type: 'line', source: 'r', paint: { 'line-color': '#ee1c25', 'line-width': 4, 'line-opacity': 0.8 } });
       em.addLayer({ id: 'w', type: 'line', source: 'w', paint: { 'line-color': '#ffd400', 'line-width': 5 } });
-      em.addLayer({ id: 'st', type: 'circle', source: 'st', paint: { 'circle-radius': 5, 'circle-color': '#fff', 'circle-stroke-color': '#123b96', 'circle-stroke-width': 2 } });
+      em.addLayer({ id: 'st', type: 'circle', source: 'st', paint: { 'circle-radius': ['case', ['has', 'add'], 7, 5], 'circle-color': ['case', ['has', 'add'], '#3ddc84', '#fff'], 'circle-stroke-color': '#123b96', 'circle-stroke-width': 2 } });
       em.addLayer({ id: 'wp', type: 'circle', source: 'wp', paint: { 'circle-radius': 5, 'circle-color': '#ffd400', 'circle-stroke-color': '#000', 'circle-stroke-width': 1.5 } });
       mk.forEach(m => m.setLngLat([0, 0]).addTo(em));
-      draw(); focus();
+      draw(); focus(); listAdded();
     });
     const est = t => { ed.querySelector('#est').textContent = t; };
-    em.on('click', e => { wps.push([+e.lngLat.lat.toFixed(6), +e.lngLat.lng.toFixed(6)]); draw(); est(`Punktów na tym odcinku: ${wps.length}. Kliknij „Zapisz odcinek”, gdy skończysz.`); });
+    try { const D0 = typeof DATA !== 'undefined' ? DATA : null;
+      const all = [...new Set(Object.keys((D0 && D0.stops) || {}).concat(Object.keys((D0 && D0.archive) || {})))];
+      ed.querySelector('#enames').innerHTML = all.sort((a, b) => a.localeCompare(b, 'pl')).map(x => `<option value="${esc(x)}">`).join(''); } catch (e) {}
+    let adding = false;
+    const listAdded = () => {
+      const a = segs['a' + cur] || [];
+      ed.querySelector('#eadded').innerHTML = a.map((x, j) => `<button class="chip" data-del="${j}">✕ ${esc(x.n)}${x.r ? ' N/Ż' : ''}</button>`).join('');
+      ed.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+        a.splice(+b.dataset.del, 1); if (!a.length) delete segs['a' + cur];
+        saveMine(ui.fixKey, segs); draw(); listAdded(); est('Usunięto dodany przystanek.');
+      });
+    };
+    ed.querySelector('#eadd').onclick = () => {
+      const nm = ed.querySelector('#ename').value.trim();
+      if (!nm) { est('Najpierw wpisz nazwę przystanku.'); return; }
+      adding = true; est(`Kliknij na mapie miejsce przystanku „${nm}” (między żółtymi przystankami).`);
+    };
+    em.on('click', e => {
+      if (adding) {
+        adding = false;
+        const nm = ed.querySelector('#ename').value.trim(), r = ed.querySelector('#ereq').checked;
+        (segs['a' + cur] = segs['a' + cur] || []).push({ n: nm, q: [+e.lngLat.lat.toFixed(6), +e.lngLat.lng.toFixed(6)], r: r ? 1 : 0 });
+        saveMine(ui.fixKey, segs); draw(); listAdded();
+        const has = window.recFor && window.recFor(nm, r);
+        est(`Dodano „${nm}”.` + (has ? '' : ' Uwaga: nie mam nagrania tego przystanku – w filmiku będzie sam znak bez zapowiedzi.'));
+        return;
+      }
+      wps.push([+e.lngLat.lat.toFixed(6), +e.lngLat.lng.toFixed(6)]); draw(); est(`Punktów na tym odcinku: ${wps.length}. Kliknij „Zapisz odcinek”, gdy skończysz.`); });
     const sel = ed.querySelector('#eseg');
-    sel.onchange = () => { cur = +sel.value; wps = (segs[cur] || []).slice(); draw(); focus(); est(segs[cur] ? 'Ten odcinek ma już poprawkę – możesz ją zmienić.' : 'Klikaj na mapie punkty trasy między żółtymi przystankami.'); };
+    sel.onchange = () => { cur = +sel.value; adding = false; wps = (segs[cur] || []).slice(); draw(); focus(); listAdded(); est(segs[cur] ? 'Ten odcinek ma już poprawkę – możesz ją zmienić.' : 'Klikaj na mapie punkty trasy między żółtymi przystankami.'); };
     ed.querySelector('#eundo').onclick = () => { wps.pop(); draw(); };
     ed.querySelector('#eclr').onclick = () => { wps = []; delete segs[cur]; saveMine(ui.fixKey, segs); sel.options[cur].text = sel.options[cur].text.replace(' ✓', ''); draw(); est('Odcinek przywrócony do przebiegu z rozkładu.'); };
     ed.querySelector('#eprs').onclick = () => { delete segs['p' + cur]; delete segs['p' + (cur + 1)]; saveMine(ui.fixKey, segs); draw(); focus(); est('Przystanki tego odcinka wróciły na miejsce z rozkładu.'); };
