@@ -1,0 +1,377 @@
+/* Route video ("filmik z trasy"): the camera flies along the line over a satellite or street map,
+   a red line grows behind it, a stop sign pops up at every stop and its announcement plays.
+   The same 1080x1920 canvas is shown as the preview and recorded to a video file. */
+(function () {
+  'use strict';
+  const W = 1080, H = 1920, FPS = 30;
+  const SPEEDS = { slow: 110, normal: 200, fast: 380 };           // metres per second of travel
+  const STYLES = {
+    sat: {
+      version: 8,
+      glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+      sources: {
+        img: { type: 'raster', tileSize: 256, maxzoom: 19,
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'] },
+        lbl: { type: 'raster', tileSize: 256, maxzoom: 19,
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'] },
+        rd: { type: 'raster', tileSize: 256, maxzoom: 19,
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}'] }
+      },
+      layers: [{ id: 'img', type: 'raster', source: 'img' },
+               { id: 'rd', type: 'raster', source: 'rd', paint: { 'raster-opacity': 0.55 } },
+               { id: 'lbl', type: 'raster', source: 'lbl' }]
+    },
+    map: 'https://tiles.openfreemap.org/styles/liberty'
+  };
+  const ATTR = { sat: 'Zdjęcia: Esri, Maxar, Earthstar Geographics', map: '© OpenStreetMap · OpenFreeMap' };
+
+  let ui = null, run = null;
+
+  // ---------- geometry helpers ----------
+  const R = 6371000, rad = Math.PI / 180;
+  function hav(a, b) {
+    const dla = (b[0] - a[0]) * rad, dlo = (b[1] - a[1]) * rad;
+    const h = Math.sin(dla / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dlo / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  function prep(g) {
+    const cum = [0];
+    for (let i = 1; i < g.p.length; i++) cum.push(cum[i - 1] + hav(g.p[i - 1], g.p[i]));
+    return { pts: g.p, cum, len: cum[cum.length - 1], stops: g.s };
+  }
+  function at(G, d) {                       // [lat,lon] and segment index at distance d
+    d = Math.max(0, Math.min(G.len, d));
+    let lo = 0, hi = G.cum.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (G.cum[m] <= d) lo = m; else hi = m; }
+    const a = G.pts[lo], b = G.pts[hi], s = G.cum[hi] - G.cum[lo] || 1, u = (d - G.cum[lo]) / s;
+    return { p: [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u], i: lo };
+  }
+  function bearing(a, b) {
+    const y = Math.sin((b[1] - a[1]) * rad) * Math.cos(b[0] * rad);
+    const x = Math.cos(a[0] * rad) * Math.sin(b[0] * rad) - Math.sin(a[0] * rad) * Math.cos(b[0] * rad) * Math.cos((b[1] - a[1]) * rad);
+    return Math.atan2(y, x) / rad;
+  }
+  function travelled(G, d) {                // coordinates [lon,lat] of the route up to distance d
+    const e = at(G, d), out = [];
+    for (let i = 0; i <= e.i; i++) out.push([G.pts[i][1], G.pts[i][0]]);
+    out.push([e.p[1], e.p[0]]);
+    return out;
+  }
+  const ease = u => u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2;
+  const angDiff = (a, b) => ((b - a + 540) % 360) - 180;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // ---------- drawing ----------
+  function rr(c, x, y, w, h, r) { c.beginPath(); c.roundRect(x, y, w, h, r); }
+
+  // LED destination display: text rasterised to a dot matrix, scrolling if wider than the bar
+  function ledBitmap(text) {
+    const cv = document.createElement('canvas'), c = cv.getContext('2d');
+    const rows = 16; c.font = 'bold 15px Arial, Helvetica, sans-serif';
+    const w = Math.ceil(c.measureText(text).width) + 2;
+    cv.width = w; cv.height = rows;
+    c.font = 'bold 15px Arial, Helvetica, sans-serif'; c.fillStyle = '#fff'; c.textBaseline = 'middle';
+    c.fillText(text, 1, rows / 2 + 1);
+    const d = c.getImageData(0, 0, w, rows).data, on = [];
+    for (let y = 0; y < rows; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 110) on.push([x, y]);
+    return { w, rows, on };
+  }
+  function drawLED(c, led, t) {
+    const y0 = 110, bh = 150, pitch = 8.6, r = 3.3;
+    c.fillStyle = '#050505'; c.fillRect(0, y0, W, bh);
+    c.fillStyle = '#1a1206';                                   // unlit dots grid
+    const top = y0 + (bh - led.rows * pitch) / 2;
+    const totalW = led.w * pitch, gap = 60 * pitch;
+    const scroll = totalW > W - 40;
+    let off = scroll ? 20 - ((t * 140) % (totalW + gap)) : (W - totalW) / 2;
+    c.save(); c.beginPath(); c.rect(0, y0, W, bh); c.clip();
+    c.shadowColor = '#ff9a1a'; c.shadowBlur = 10; c.fillStyle = '#ffb02e';
+    const reps = scroll ? [0, totalW + gap] : [0];
+    for (const rp of reps) {
+      c.beginPath();
+      for (const [x, y] of led.on) {
+        const px = off + rp + x * pitch, py = top + y * pitch;
+        if (px < -10 || px > W + 10) continue;
+        c.moveTo(px + r, py); c.arc(px, py, r, 0, 7);
+      }
+      c.fill();
+    }
+    c.restore();
+  }
+
+  function pictogram(c, x, y, w, tram) {   // black bus / tram side view, w = width
+    const h = w * 0.42; c.fillStyle = '#000';
+    if (tram) {
+      c.fillRect(x + w * 0.38, y - h * 0.32, w * 0.24, h * 0.06);          // pantograph
+      c.beginPath(); c.moveTo(x + w * 0.42, y - h * 0.27); c.lineTo(x + w * 0.5, y - h * 0.05); c.lineTo(x + w * 0.58, y - h * 0.27);
+      c.lineWidth = w * 0.025; c.strokeStyle = '#000'; c.stroke();
+    }
+    rr(c, x, y, w, h, h * 0.18); c.fill();
+    c.fillStyle = '#fff';
+    const wy = y + h * 0.16, wh = h * 0.36, n = tram ? 5 : 4, ww = (w * 0.82) / n;
+    for (let i = 0; i < n; i++) { rr(c, x + w * 0.06 + i * ww, wy, ww * 0.8, wh, 4); c.fill(); }
+    c.fillStyle = '#000';
+    const wr = h * 0.17, cy = y + h * 1.0;
+    const wx = tram ? [0.18, 0.32, 0.68, 0.82] : [0.2, 0.78];
+    for (const f of wx) { c.beginPath(); c.arc(x + w * f, cy, wr, 0, 7); c.fill(); c.fillStyle = '#fff';
+      c.beginPath(); c.arc(x + w * f, cy, wr * 0.35, 0, 7); c.fill(); c.fillStyle = '#000'; }
+  }
+  // stop sign (blue frame, white field, pictogram) on a white card with the stop name
+  function drawSign(c, name, tram, k) {
+    if (k <= 0) return;
+    const cw = 760, ch = 1000, x = 90, y = 330;
+    c.save();
+    c.globalAlpha = Math.min(1, k * 1.4);
+    const sc = 0.85 + 0.15 * ease(Math.min(1, k));
+    c.translate(x + cw / 2, y + ch / 2); c.scale(sc, sc); c.translate(-(x + cw / 2), -(y + ch / 2));
+    c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = 30; c.fillStyle = 'rgba(255,255,255,.93)';
+    rr(c, x, y, cw, ch, 34); c.fill(); c.shadowBlur = 0;
+    const sx = x + 50, sy = y + 40, sw = cw - 100, sh = 780;
+    c.fillStyle = '#123b96'; c.fillRect(sx, sy, sw, sh);
+    c.fillStyle = '#fff'; c.fillRect(sx + 4, sy + 4, sw - 8, sh - 8);
+    c.fillStyle = '#123b96';
+    c.fillRect(sx + 4, sy + 4, sw * 0.09, sh - 8);
+    c.fillRect(sx + sw - 4 - sw * 0.09, sy + 4, sw * 0.09, sh - 8);
+    c.fillRect(sx + 4, sy + sh - 4 - sh * 0.22, sw - 8, sh * 0.22);
+    pictogram(c, sx + sw * 0.17, sy + sh * 0.27, sw * 0.66, tram);
+    c.fillStyle = '#111'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    let fs = 58; c.font = `500 ${fs}px Arial, Helvetica, sans-serif`;
+    while (c.measureText(name).width > cw - 60 && fs > 30) { fs -= 2; c.font = `500 ${fs}px Arial, Helvetica, sans-serif`; }
+    c.fillText(name, x + cw / 2, y + ch - 95);
+    c.restore();
+  }
+  function drawKm(c, pt, km) {
+    const txt = km.toFixed(1).replace('.', ',') + ' km';
+    c.font = 'bold 40px Arial, Helvetica, sans-serif';
+    const tw = c.measureText(txt).width + 30, x = pt.x - tw / 2, y = pt.y - 100;
+    c.fillStyle = '#e0141e'; rr(c, x, y, tw, 58, 12); c.fill();
+    c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(txt, pt.x, y + 30);
+    c.fillStyle = '#e0141e'; c.beginPath(); c.arc(pt.x, pt.y, 16, 0, 7); c.fill();
+    c.lineWidth = 5; c.strokeStyle = '#fff'; c.stroke();
+  }
+
+  // ---------- audio ----------
+  async function decodeAll(ac, recs) {
+    const out = [];
+    for (const r of recs) {
+      if (!r) { out.push(null); continue; }
+      try { const b = await getBlob(r, 'mp3'); out.push(await ac.decodeAudioData(await b.arrayBuffer())); }
+      catch (e) { out.push(null); }
+    }
+    return out;
+  }
+  function playBuf(st, buf) {
+    if (!buf) return Promise.resolve();
+    return new Promise(res => {
+      const s = st.ac.createBufferSource(); s.buffer = buf; s.connect(st.gain); s.onended = res; s.start();
+      st.sources.push(s);
+    });
+  }
+
+  // ---------- UI ----------
+  function css() {
+    if (document.getElementById('filmcss')) return;
+    const s = document.createElement('style'); s.id = 'filmcss';
+    s.textContent = `#film{position:fixed;inset:0;z-index:50;background:#0b0d12;display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px;overflow:auto}
+#film .fv{height:min(70vh,150vw);aspect-ratio:9/16;background:#000;border-radius:14px;overflow:hidden}
+#film canvas.out{width:100%;height:100%;display:block}
+#film .fc{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:560px}
+#film .st{color:#9aa3b2;font-size:13px;text-align:center;min-height:18px;max-width:560px}
+#filmmap{position:fixed;left:-20000px;top:0;width:540px;height:960px}`;
+    document.head.appendChild(s);
+  }
+  async function loadLib() {
+    if (window.maplibregl) return;
+    await new Promise((res, rej) => {
+      const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'lib/maplibre-gl.css'; document.head.appendChild(l);
+      const s = document.createElement('script'); s.src = 'lib/maplibre-gl.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s);
+    });
+  }
+
+  async function open(opts) {
+    // opts: {line, dir, vi, variant, items, tram}
+    css(); close();
+    const box = document.createElement('div'); box.id = 'film';
+    box.innerHTML = `<div class="fv"><canvas class="out" width="${W}" height="${H}"></canvas></div>
+      <div class="st" id="fst">Ładowanie mapy…</div>
+      <div class="fc"><button class="chip on" data-s="sat">Satelita</button><button class="chip" data-s="map">Mapa</button>
+        <span style="width:10px"></span>
+        <button class="chip" data-v="slow">Wolno</button><button class="chip on" data-v="normal">Normalnie</button><button class="chip" data-v="fast">Szybko</button></div>
+      <div class="fc"><button class="btn pri" id="fplay">▶ Odtwórz</button><button class="btn" id="frec">● Nagraj wideo</button><button class="btn" id="fx">Zamknij</button></div>`;
+    document.body.appendChild(box);
+    const md = document.createElement('div'); md.id = 'filmmap'; document.body.appendChild(md);
+    ui = { box, md, out: box.querySelector('canvas.out'), opts, style: 'sat', speed: 'normal' };
+    ui.ctx = ui.out.getContext('2d');
+    const st = t => { box.querySelector('#fst').textContent = t; };
+    ui.status = st;
+    box.querySelector('#fx').onclick = close;
+    box.querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
+      if (run) return; ui.style = b.dataset.s;
+      box.querySelectorAll('[data-s]').forEach(x => x.classList.toggle('on', x === b)); makeMap();
+    });
+    box.querySelectorAll('[data-v]').forEach(b => b.onclick = () => {
+      if (run) return; ui.speed = b.dataset.v;
+      box.querySelectorAll('[data-v]').forEach(x => x.classList.toggle('on', x === b));
+    });
+    box.querySelector('#fplay').onclick = () => start(false);
+    box.querySelector('#frec').onclick = () => start(true);
+    try {
+      await loadLib();
+      const fn = opts.line.replace(/[^0-9A-Za-z_-]/g, '_');
+      const geo = await (await fetch('geo/' + fn + '.json')).json();
+      const g = geo[opts.dir + '/' + opts.vi];
+      if (!g) { st('Brak przebiegu tej trasy w rozkładzie.'); return; }
+      ui.G = prep(g);
+    } catch (e) { st('Nie udało się wczytać mapy.'); return; }
+    ui.led = ledBitmap(`${opts.line}  ${opts.variant.stops[opts.variant.stops.length - 1]}`);
+    makeMap();
+    loop();
+  }
+
+  function makeMap() {
+    if (ui.map) { ui.map.remove(); ui.map = null; }
+    const G = ui.G, b = new maplibregl.LngLatBounds();
+    G.pts.forEach(p => b.extend([p[1], p[0]]));
+    ui.bounds = b;
+    const m = new maplibregl.Map({
+      container: ui.md, style: (window.Film && Film.styleOverride) || STYLES[ui.style], interactive: false,
+      attributionControl: false, pixelRatio: 2, fadeDuration: 0,
+      canvasContextAttributes: { preserveDrawingBuffer: true, antialias: true },
+      bounds: b, fitBoundsOptions: { padding: { top: 380, bottom: 120, left: 60, right: 60 } }
+    });
+    ui.map = m; ui.ready = false;
+    m.on('load', () => {
+      m.addSource('route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } } });
+      m.addSource('full', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: G.pts.map(p => [p[1], p[0]]) } } });
+      m.addSource('stops', { type: 'geojson', data: { type: 'FeatureCollection', features: G.stops.map(s => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s[1], s[0]] } })) } });
+      m.addLayer({ id: 'full', type: 'line', source: 'full', paint: { 'line-color': '#ffffff', 'line-opacity': 0.35, 'line-width': 3, 'line-dasharray': [2, 2] } });
+      m.addLayer({ id: 'route-c', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#5a0000', 'line-width': 10 } });
+      m.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ee1c25', 'line-width': 6 } });
+      m.addLayer({ id: 'stops', type: 'circle', source: 'stops', paint: { 'circle-radius': 5, 'circle-color': '#fff', 'circle-stroke-color': '#123b96', 'circle-stroke-width': 2.5 } });
+      ui.ready = true; ui.status('Gotowe. Wybierz mapę i prędkość, potem Odtwórz albo Nagraj wideo.');
+    });
+    m.on('error', () => {});
+  }
+
+  // one frame of the composite: map + overlays
+  function loop() {
+    if (!ui) return;
+    const c = ui.ctx, t = performance.now() / 1000;
+    c.fillStyle = '#10151d'; c.fillRect(0, 0, W, H);
+    if (ui.map) { try { c.drawImage(ui.map.getCanvas(), 0, 0, W, H); } catch (e) {} }
+    const S = ui.scene || {};
+    if (S.head && ui.map) { const p = ui.map.project([S.head[1], S.head[0]]); drawKm(c, { x: p.x * 2, y: p.y * 2 }, S.km || 0); }
+    drawLED(c, ui.led, t);
+    if (S.sign) drawSign(c, S.sign.name, ui.opts.tram, Math.min(1, (t - S.sign.t0) / 0.25) * (S.sign.out ? Math.max(0, 1 - (t - S.sign.out) / 0.25) : 1));
+    c.font = '24px Arial, Helvetica, sans-serif'; c.fillStyle = 'rgba(255,255,255,.75)'; c.textAlign = 'right'; c.textBaseline = 'alphabetic';
+    c.fillText(ATTR[ui.style], W - 20, H - 20);
+    ui.raf = requestAnimationFrame(loop);
+  }
+
+  function setRoute(d) {
+    const src = ui.map.getSource('route');
+    if (src) src.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: travelled(ui.G, d) } });
+  }
+  function camAt(d, zoom, bear) {
+    const G = ui.G, p = at(G, d).p;
+    const a = at(G, Math.max(0, d - 60)).p, b = at(G, Math.min(G.len, d + 220)).p;
+    let target = hav(a, b) > 5 ? bearing(a, b) : bear;
+    const nb = bear + angDiff(bear, target) * 0.08;
+    ui.map.jumpTo({ center: [p[1], p[0]], zoom, pitch: 55, bearing: nb });
+    return { p, bear: nb };
+  }
+  function moveEnd(m) { return new Promise(r => m.once('moveend', r)); }
+
+  async function start(record) {
+    if (run || !ui || !ui.ready) return;
+    const o = ui.opts, G = ui.G, m = ui.map;
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    await ac.resume();
+    const gain = ac.createGain(); gain.connect(ac.destination);
+    const aud = { ac, gain, sources: [] };
+    run = { stop: false, aud };
+    const alive = () => ui && run && !run.stop;
+    ui.status('Przygotowanie zapowiedzi…');
+    const introBuf = (await decodeAll(ac, [o.intro]))[0];
+    const stopBufs = await decodeAll(ac, o.items.map(x => x.rec));
+    let rec = null, chunks = [], mime = '';
+    if (record) {
+      const dest = ac.createMediaStreamDestination(); gain.connect(dest);
+      const vs = ui.out.captureStream(FPS);
+      const stream = new MediaStream([...vs.getVideoTracks(), ...dest.stream.getAudioTracks()]);
+      for (const t of ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'])
+        if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) { mime = t; break; }
+      if (!mime) { ui.status('Ta przeglądarka nie umie nagrywać wideo.'); run = null; return; }
+      rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8e6 });
+      rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+      rec.start(1000);
+    }
+    const now = () => performance.now() / 1000;
+    const speed = SPEEDS[ui.speed];
+    ui.scene = {};
+    ui.status(record ? 'Nagrywanie… nie przełączaj karty.' : 'Odtwarzanie…');
+    try {
+      // 1. overview with the line announcement
+      m.fitBounds(ui.bounds, { padding: { top: 380, bottom: 120, left: 60, right: 60 }, pitch: 0, bearing: 0, duration: 0 });
+      setRoute(0);
+      await sleep(600);
+      const t0 = now();
+      await playBuf(aud, introBuf);
+      await sleep(Math.max(0, 2500 - (now() - t0) * 1000));
+      // 2. fly in to the first stop
+      let bear = bearing(G.pts[0], at(G, 250).p);
+      const s0 = G.stops[0];
+      m.flyTo({ center: [s0[1], s0[0]], zoom: 16, pitch: 55, bearing: bear, duration: 2800, essential: true });
+      await moveEnd(m);
+      ui.scene.head = [s0[0], s0[1]]; ui.scene.km = 0;
+      // 3. stop by stop
+      for (let i = 0; i < G.stops.length && !run.stop; i++) {
+        const name = o.items[i] ? o.items[i].name : '';
+        ui.scene.sign = { name, t0: now() };
+        const ts = now();
+        await playBuf(aud, stopBufs[i]);
+        await sleep(Math.max(0, 1300 - (now() - ts) * 1000) + 250);
+        ui.scene.sign.out = now();
+        if (i === G.stops.length - 1) break;
+        const d0 = G.stops[i][2], d1 = Math.max(d0, G.stops[i + 1][2]), L = d1 - d0;
+        const dur = Math.max(1.4, L / speed), zoom = L > 2500 ? 14.6 : L > 1200 ? 15.3 : 16;
+        const z0 = m.getZoom(), tm = now();
+        await new Promise(res => {
+          const step = () => {
+            if (!ui || run.stop) return res();
+            const u = Math.min(1, (now() - tm) / dur), d = d0 + L * ease(u);
+            const zz = z0 + (zoom - z0) * Math.min(1, u * 3) + (u > 0.7 ? (16 - zoom) * (u - 0.7) / 0.3 : 0);
+            const r = camAt(d, zz, bear); bear = r.bear;
+            setRoute(d); ui.scene.head = r.p; ui.scene.km = d / 1000;
+            if (ui.scene.sign && now() - ui.scene.sign.out > 0.3) ui.scene.sign = null;
+            u < 1 ? requestAnimationFrame(step) : res();
+          };
+          step();
+        });
+      }
+      // 4. finish: zoom back out over the whole route
+      await sleep(900); ui.scene.sign = null; ui.scene.head = null;
+      if (!run.stop) { m.fitBounds(ui.bounds, { padding: { top: 380, bottom: 120, left: 60, right: 60 }, pitch: 0, bearing: 0, duration: 2500 }); await moveEnd(m); await sleep(1500); }
+    } catch (e) { console.error(e); }
+    aud.sources.forEach(s => { try { s.stop(); } catch (e) {} });
+    if (rec) {
+      const done = new Promise(r => rec.onstop = r); rec.stop(); await done;
+      const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+      const blob = new Blob(chunks, { type: mime.split(';')[0] });
+      const fname = safe(`Linia ${o.line} - ${o.variant.stops[o.variant.stops.length - 1]}`) + '.' + ext;
+      await saveFile(fname, blob);
+      ui && ui.status(ext === 'mp4' ? 'Gotowe – wideo MP4 zapisane.' : 'Gotowe – zapisano jako WebM (ta przeglądarka nie nagrywa MP4).');
+    } else ui && ui.status('Koniec. Możesz odtworzyć jeszcze raz albo nagrać wideo.');
+    ac.close(); run = null; if (ui) ui.scene = {};
+  }
+
+  function close() {
+    if (run) { run.stop = true; run.aud.sources.forEach(x => { try { x.stop(); } catch (e) {} }); }
+    if (!ui) { const b = document.getElementById('film'); if (b) b.remove(); return; }
+    cancelAnimationFrame(ui.raf);
+    if (ui.map) ui.map.remove();
+    ui.md.remove(); ui.box.remove(); ui = null;
+  }
+
+  window.Film = { open, close, _led: ledBitmap };
+})();

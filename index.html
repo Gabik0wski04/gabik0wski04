@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zapowiedzi MPK Kraków</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=VT323&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0e1116;--panel:#161a21;--panel2:#1d222b;--line:#272d38;--text:#e9edf3;--mute:#8b94a3;
+  --led:#ffb21e;--tram:#e2343f;--bus:#2d6fdb;--night:#5b4bd1;--agl:#1f9d6b;--ok:#3ccf8e;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer}
+.wrap{max-width:860px;margin:0 auto;padding:16px 14px 120px}
+header.top{display:flex;align-items:center;gap:12px;margin:4px 0 14px}
+.led{font-family:VT323,monospace;color:var(--led);text-shadow:0 0 8px rgba(255,178,30,.55);background:#000;border-radius:8px;padding:2px 10px;letter-spacing:.5px}
+h1{font-size:30px;margin:0;line-height:1}
+.sub{color:var(--mute);font-size:13px;margin-top:4px}
+.search{display:flex;gap:8px;margin:6px 0 14px;flex-wrap:wrap}
+.search input{flex:1;min-width:180px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;color:var(--text);font-size:16px;outline:none}
+.search input:focus{border-color:var(--led)}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:9px 14px;font-size:14px;color:var(--mute)}
+.chip.on{background:var(--led);color:#1a1200;border-color:var(--led);font-weight:600}
+.group h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);margin:20px 0 8px;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:8px}
+.tile{position:relative;height:52px;border-radius:10px;border:none;font-weight:800;font-size:19px;background:var(--bus);color:#fff;box-shadow:inset 0 -3px 0 rgba(0,0,0,.25)}
+.tile.tram{background:var(--tram)}.tile.night{background:var(--night)}.tile.agl{background:var(--agl)}
+.tile.empty{opacity:.45}
+.tile .dot{position:absolute;top:5px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--led);box-shadow:0 0 6px var(--led)}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--mute);align-items:center;flex-wrap:wrap}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--led);margin-right:5px;box-shadow:0 0 6px var(--led)}
+/* line view */
+.back{background:none;border:none;color:var(--mute);padding:6px 0;font-size:15px}
+.lhead{display:flex;align-items:center;gap:14px;margin:8px 0 14px}
+.badge{min-width:72px;height:60px;border-radius:12px;display:grid;place-items:center;font-size:30px;font-weight:800;background:var(--bus);padding:0 10px}
+.badge.tram{background:var(--tram)}.badge.night{background:var(--night)}.badge.agl{background:var(--agl)}
+.lhead .k{font-size:13px;color:var(--mute)}.lhead .dest{font-size:20px;font-weight:700;margin-top:2px}
+.dirs{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.dirbtn{flex:1;min-width:150px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.dirbtn small{display:block;color:var(--mute);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.dirbtn b{font-size:15px}
+.dirbtn.on{border-color:var(--led);background:#231c0c}
+.dirbtn .rec{color:var(--led);font-size:11px;margin-top:3px;display:block}
+select{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:14px;width:100%;margin-bottom:10px}
+.actions{display:flex;gap:8px;margin:4px 0 14px;flex-wrap:wrap}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-weight:600;font-size:14px;display:inline-flex;align-items:center;gap:8px}
+.btn.pri{background:var(--led);color:#1a1200;border-color:var(--led)}
+.btn:disabled{opacity:.4;cursor:default}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-top:1px solid var(--line);position:relative}
+.row:first-child{border-top:none}
+.row .n{width:26px;text-align:right;color:var(--mute);font-variant-numeric:tabular-nums;font-size:13px;flex:none}
+.row .track{width:14px;align-self:stretch;position:relative;flex:none}
+.row .track:before{content:"";position:absolute;left:6px;top:-11px;bottom:-11px;width:2px;background:var(--line)}
+.row .track:after{content:"";position:absolute;left:2px;top:50%;margin-top:-5px;width:10px;height:10px;border-radius:50%;background:var(--panel);border:2px solid var(--mute)}
+.row.has .track:after{border-color:var(--led)}
+.row.intro .track:after{border-radius:2px;background:var(--led);border-color:var(--led)}
+.row:first-child .track:before{top:50%}.row:last-child .track:before{bottom:50%}
+.row .nm{flex:1;min-width:0}
+.row .nm b{font-weight:600;font-size:15px;display:block;overflow-wrap:anywhere}
+.row .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:3px}
+.tag{font-size:11px;color:var(--mute);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+.tag.nz{color:#f0c46b;border-color:#5a4720}
+.tag.fb{color:#9fb4ff;border-color:#2e3a66}
+.ib{width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--panel2);display:grid;place-items:center;flex:none}
+.ib svg{width:18px;height:18px;fill:currentColor}
+.ib.play{background:var(--led);border-color:var(--led);color:#1a1200}
+.ib:disabled{opacity:.25;cursor:default;background:var(--panel2);color:var(--mute);border-color:var(--line)}
+.row.now{background:#231c0c}
+.row.now b{color:var(--led)}
+.empty-note{color:var(--mute);font-size:13px;margin:10px 2px}
+.player{position:fixed;left:0;right:0;bottom:0;background:rgba(14,17,22,.96);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:none;backdrop-filter:blur(6px)}
+.player.on{display:block}
+.player .in{max-width:860px;margin:0 auto;display:flex;align-items:center;gap:12px}
+.player .t{flex:1;min-width:0}
+.player .t b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.player .t small{color:var(--mute)}
+.bar{height:3px;background:var(--line);border-radius:3px;margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--led)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:90px;background:#2a303b;border:1px solid var(--line);padding:10px 14px;border-radius:10px;font-size:14px;opacity:0;transition:.2s;pointer-events:none;max-width:90%}
+.toast.on{opacity:1}
+#sheet{display:none}#sheet.on{display:block}
+.sh-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20}
+.sh{position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--panel);border-top:1px solid var(--line);border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px;max-width:860px;margin:0 auto}
+.sh p{margin:0;color:var(--mute);font-size:14px}.sh a.btn{text-decoration:none;justify-content:center}.sh .btn{justify-content:center}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
+.tile .pc{position:absolute;bottom:3px;left:0;right:0;font-size:10px;font-weight:600;opacity:.85}
+.stats{display:flex;gap:10px;margin:2px 0 6px;flex-wrap:wrap}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;flex:1;min-width:120px}
+.stat b{font-size:20px;display:block}.stat small{color:var(--mute);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><p class="empty-note">Ładowanie…</p></div>
+<div class="player" id="player"><div class="in">
+  <button class="ib play" id="pp" aria-label="Pauza"></button>
+  <div class="t"><b id="pt">–</b><small id="ps"></small><div class="bar"><i id="pb"></i></div></div>
+  <button class="ib" id="pstop" aria-label="Zatrzymaj"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+</div></div>
+<div class="toast" id="toast"></div>
+<audio id="au" preload="none"></audio>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+const I={
+  play:'<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+  pause:'<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>',
+  dl:'<svg viewBox="0 0 24 24"><path d="M11 4h2v9.2l3.3-3.3 1.4 1.4L12 17l-5.7-5.7 1.4-1.4 3.3 3.3z M5 19h14v2H5z"/></svg>'
+};
+let DATA=null, BYNAME={}, downloads=null;
+const S={filter:'',onlyRec:false,dir:{},variant:{}};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('on'),2600)}
+function cls(l){if(l.type==='tram')return'tram';if(/^Nocne/.test(l.group))return'night';if(l.group==='Aglomeracyjne')return'agl';return''}
+function hasRec(l){return COVER[l.name].n>0}
+function safe(s){return s.normalize('NFC').replace(/[\\/:*?"<>|]/g,'-')}
+
+// global index: stop name -> recordings from any line/direction (fallback)
+let ALLSTOPS=[], COVER={};
+function buildIndex(){
+  const set=new Set();
+  for(const l of DATA.lines){let n=0,t=0;const seen=new Set();
+    for(const d of l.dirs)for(const [vi,v] of d.variants.entries())for(const s of v.stops){set.add(s);if(vi===0&&!seen.has(s)){seen.add(s);t++;if(DATA.stops[s]||(DATA.archive||{})[s])n++}}
+    COVER[l.name]={n,t}}
+  ALLSTOPS=[...set].sort((a,b)=>a.localeCompare(b,'pl'));
+  for(const l of DATA.lines)for(const d of l.dirs)for(const v of d.variants)v.stops.forEach((s,i)=>{(BYNAME[s]=BYNAME[s]||new Set()).add(l.name)});
+}
+function recFor(stop,req){const r=DATA.stops[stop]||(DATA.archive||{})[stop];return r?{e:r,t:req?'z':'p'}:null}
+// audio lives in pack files (packs/NNN.bin); entries hold [offset,length] per variant
+const PACKS=new Map(), URLS=new Map();
+function pack(k){if(!PACKS.has(k))PACKS.set(k,fetch('packs/'+String(k).padStart(3,'0')+'.mp3').then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer()}).catch(e=>{PACKS.delete(k);throw e}));return PACKS.get(k)}
+async function getBlob(rec,fmt){const key=rec.t+(fmt==='mp4'?'m':'');const [o,l]=rec.e[key];const buf=await pack(rec.e.k);return new Blob([buf.slice(o,o+l)],{type:fmt==='mp4'?'audio/mp4':'audio/mpeg'})}
+async function blobURL(rec){const id=rec.e.k+':'+rec.e[rec.t][0];if(!URLS.has(id))URLS.set(id,URL.createObjectURL(await getBlob(rec,'mp3')));return URLS.get(id)}
+
+// ---------- home ----------
+function home(){
+  document.title='Zapowiedzi MPK Kraków';
+  const q=S.filter.trim().toLowerCase();
+  const recLines=DATA.lines.filter(l=>COVER[l.name].n===COVER[l.name].t).length;
+  const recClips=ALLSTOPS.filter(s=>DATA.stops[s]).length;
+  let ls=DATA.lines.filter(l=>(!S.onlyRec||hasRec(l)));
+  if(q){ls=ls.filter(l=>l.name.toLowerCase().startsWith(q)||l.dirs.some(d=>d.variants.some(v=>v.stops.some(s=>s.toLowerCase().includes(q)))))}
+  const groups=[];for(const l of ls){let g=groups.find(x=>x.n===l.group);if(!g){g={n:l.group,l:[]};groups.push(g)}g.l.push(l)}
+  $('#app').innerHTML=`
+  <header class="top"><div><h1><span class="led">ZAPOWIEDZI</span></h1><div class="sub">MPK Kraków · rozkład z ${esc(DATA.updated)}</div></div></header>
+  <div class="stats">
+    <div class="stat"><b>${DATA.lines.length}</b><small>linii w bazie</small></div>
+    <div class="stat"><b>${recClips}<span style="font-size:13px;color:var(--mute);font-weight:500"> / ${ALLSTOPS.length}</span></b><small>przystanków nagranych</small></div>
+    <div class="stat"><b>${recLines}</b><small>linii w 100% nagranych</small></div>
+  </div>
+  ${tabsHTML("")}
+  <div class="search">
+    <input id="q" type="search" placeholder="Linia lub przystanek…" value="${esc(S.filter)}" autocomplete="off">
+    <button class="chip ${S.onlyRec?'on':''}" id="only">Tylko z nagraniami</button>
+  </div>
+  <div class="legend"><span><i></i>ma nagrania</span><span>% = ile przystanków linii jest nagranych</span></div>
+  ${groups.map(g=>`<section class="group"><h2>${esc(g.n)}</h2><div class="grid">${g.l.map(l=>`<button class="tile ${cls(l)} ${hasRec(l)?'':'empty'}" data-l="${esc(l.name)}">${esc(l.name)}${hasRec(l)?'<span class="dot"></span>':''}${hasRec(l)?`<span class="pc">${Math.round(COVER[l.name].n/COVER[l.name].t*100)}%</span>`:''}</button>`).join('')}</div></section>`).join('')||'<p class="empty-note">Nic nie znaleziono.</p>'}`;
+  const qi=$('#q');qi.oninput=()=>{S.filter=qi.value;const p=qi.selectionStart;home();const n=$('#q');n.focus();n.setSelectionRange(p,p)};
+  $('#only').onclick=()=>{S.onlyRec=!S.onlyRec;home()};
+  bindTabs();
+  document.querySelectorAll('.tile').forEach(b=>b.onclick=()=>{location.hash='l-'+b.dataset.l});
+}
+
+// ---------- line ----------
+let current=null; // {line,dir,items}
+function lineView(name){
+  const l=DATA.lines.find(x=>x.name===name); if(!l){location.hash='';return}
+  document.title='Linia '+l.name+' – zapowiedzi';
+  if(S.dir[name]===undefined){const withRec=l.dirs.find(d=>DATA.intros[name+'|'+d.dir]);S.dir[name]=(withRec||l.dirs[0]).dir}
+  const d=l.dirs.find(x=>x.dir===S.dir[name])||l.dirs[0];
+  const vk=name+'|'+d.dir; const vi=Math.min(S.variant[vk]||0,d.variants.length-1); const v=d.variants[vi];
+  const term=v.stops[v.stops.length-1]; // variant terminus: its own intro if it ends elsewhere
+  const intro=term!==d.head?DATA.intros[name+'@'+term]:DATA.intros[name+'|'+d.dir];
+  const items=[];
+  if(intro) items.push({kind:'intro',term,name:`Linia ${l.name}, kierunek ${term}`,rec:{e:intro,t:'a'}});
+  v.stops.forEach((s,i)=>items.push({kind:'stop',idx:i+1,name:s,req:v.req[i],rec:recFor(s,v.req[i])}));
+  current={line:l,dir:d,items};
+  const nRec=items.filter(x=>x.kind==='stop'&&x.rec).length;
+  $('#app').innerHTML=`
+  <button class="back" id="back">← Wszystkie linie</button>
+  <div class="lhead"><div class="badge ${cls(l)}">${esc(l.name)}</div><div><div class="k">${l.type==='tram'?'Tramwaj':'Autobus'} · ${esc(l.group)}</div><div class="dest">→ ${esc(d.head)}</div></div></div>
+  <div class="dirs">${l.dirs.map(x=>{const r=DATA.intros[name+'|'+x.dir];return `<button class="dirbtn ${x.dir===d.dir?'on':''}" data-d="${x.dir}"><small>Kierunek</small><b>${esc(x.head)}</b>${r?'<span class="rec">● zapowiedź linii nagrana</span>':''}</button>`}).join('')}</div>
+  ${d.variants.length>1?`<select id="var">${d.variants.map((x,i)=>`<option value="${i}" ${i===vi?'selected':''}>${i===0?'Trasa podstawowa':'Wariant '+(i)}: ${esc(x.stops[0])} → ${esc(x.stops[x.stops.length-1])} (${x.stops.length} przyst.)</option>`).join('')}</select>`:''}
+  <div class="actions">
+    <button class="btn pri" id="playall" ${items.some(x=>x.rec)?'':'disabled'}>${I.play.replace('<svg','<svg width="16" height="16"')} Odtwórz całą trasę</button>
+    <button class="btn" id="zip" ${items.some(x=>x.rec)?'':'disabled'}>${I.dl.replace('<svg','<svg width="16" height="16" fill="currentColor"')} Pobierz trasę (mp3)</button>
+    <button class="btn" id="film">🎬 Filmik z trasy</button>
+  </div>
+  <div class="empty-note" style="margin-top:-4px">${nRec}/${v.stops.length} przystanków z nagraniem${intro?'':' · brak zapowiedzi „linia, kierunek” dla tego kierunku'}</div>
+  <div class="list">${items.map((it,i)=>`
+    <div class="row ${it.rec?'has':''} ${it.kind==='intro'?'intro':''}" data-i="${i}">
+      <div class="n">${it.kind==='intro'?'':it.idx}</div><div class="track"></div>
+      <div class="nm"><b>${esc(it.name)}</b><div class="tags">${it.kind==='intro'?'<span class="tag">zapowiedź linii</span>':''}${it.req?'<span class="tag nz">na żądanie</span>':''}${!it.rec?'<span class="tag">brak nagrania</span>':''}</div></div>
+      <button class="ib play" data-p="${i}" ${it.rec?'':'disabled'} aria-label="Odtwórz">${I.play}</button>
+      ${true?`<button class="ib" data-dl="${i}" ${it.rec?'':'disabled'} aria-label="Pobierz">${I.dl}</button>`:''}
+    </div>`).join('')}</div>
+`;
+  $('#back').onclick=()=>{location.hash=''};
+  document.querySelectorAll('.dirbtn').forEach(b=>b.onclick=()=>{stop();S.dir[name]=b.dataset.d;lineView(name);scrollTo(0,0)});
+  const sel=$('#var'); if(sel) sel.onchange=()=>{stop();S.variant[vk]=+sel.value;lineView(name)};
+  document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{const i=+b.dataset.p; if(Q.single===i&&!au.paused){stop();return} playQueue([i],true)});
+  document.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>dlOne(+b.dataset.dl));
+  $('#playall').onclick=()=>{const idx=items.map((x,i)=>x.rec?i:-1).filter(i=>i>=0);playQueue(idx,false)};
+  $('#zip').onclick=dlZip;
+  $('#film').onclick=async()=>{stop();
+    if(!window.Film){await new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='film.js';sc.onload=res;sc.onerror=rej;document.head.appendChild(sc)}).catch(()=>{})}
+    if(!window.Film){toast('Nie udało się wczytać filmiku');return}
+    Film.open({line:l.name,dir:d.dir,vi,variant:v,tram:l.type==='tram',intro:intro?{e:intro,t:'a'}:null,items:items.filter(x=>x.kind==='stop')})};
+  markNow();
+}
+
+// ---------- audio ----------
+const au=$('#au'); const Q={list:[],pos:0,single:null};
+function playQueue(idx,single){Q.list=idx;Q.pos=0;Q.single=single?idx[0]:null;playPos()}
+async function playPos(){
+  const it=current.items[Q.list[Q.pos]]; if(!it){stop();return}
+  const my=Q.pos, list=Q.list;
+  let url; try{url=await blobURL(it.rec)}catch(e){toast('Nie udało się wczytać nagrania');stop();return}
+  if(Q.list!==list||Q.pos!==my) return;
+  au.src=url; au.play().catch(()=>toast('Stuknij ▶ jeszcze raz'));
+  // prefetch next clip's pack
+  const nx=current.items[Q.list[Q.pos+1]]; if(nx&&nx.rec) pack(nx.rec.e.k).catch(()=>{});
+  $('#player').classList.add('on'); $('#pt').textContent=it.name;
+  $('#ps').textContent=(current.line.name==='baza'?'Baza przystanków':`Linia ${current.line.name} → ${current.dir.head}`)+(Q.list.length>1?` · ${Q.pos+1}/${Q.list.length}`:'');
+  markNow();
+  const row=document.querySelector(`.row[data-i="${Q.list[Q.pos]}"]`); if(row&&Q.list.length>1) row.scrollIntoView({block:'center',behavior:'smooth'});
+}
+au.onended=()=>{Q.pos++; if(Q.pos<Q.list.length) setTimeout(playPos,350); else stop()};
+au.ontimeupdate=()=>{$('#pb').style.width=(au.duration?au.currentTime/au.duration*100:0)+'%'};
+au.onplay=au.onpause=()=>{$('#pp').innerHTML=au.paused?I.play:I.pause;markNow()};
+$('#pp').onclick=()=>{if(au.paused)au.play().catch(()=>{});else au.pause()};
+$('#pstop').onclick=stop;
+function stop(){au.pause();Q.list=[];Q.single=null;$('#player').classList.remove('on');markNow()}
+function markNow(){
+  document.querySelectorAll('.row.now').forEach(r=>r.classList.remove('now'));
+  document.querySelectorAll('[data-p]').forEach(b=>b.innerHTML=I.play);
+  if(!Q.list.length) return; const i=Q.list[Q.pos];
+  const r=document.querySelector(`.row[data-i="${i}"]`); if(r){r.classList.add('now'); if(!au.paused){const b=r.querySelector('[data-p]'); if(b) b.innerHTML=I.pause}}
+}
+
+// ---------- downloads ----------
+async function fetchBlob(f){const r=await fetch(f);if(!r.ok)throw new Error(r.status);return r.blob()}
+function fname(it,i){
+  const L=current.line.name, D=safe(current.dir.head);
+  return it.kind==='intro'?`${L} - 00 - Linia ${L} kierunek ${safe(it.term||current.dir.head)}`:`${L} - ${String(it.idx).padStart(2,'0')} - ${safe(it.name)}`;
+}
+async function save(filename,data){
+  try{await downloads.save({filename,data});toast('Zapisano: '+filename)}
+  catch(e){const c=e&&e.code; if(c==='declined')return; toast(c==='rate_limited'?'Poczekaj chwilę i spróbuj ponownie':'Nie udało się pobrać ('+(c||'błąd')+')')}
+}
+// save a generated file: through the Claude host when the page runs there, otherwise a normal browser download
+async function saveFile(filename,blob){
+  if(downloads) return save(filename,blob);
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},5000);toast('Zapisano: '+filename);
+}
+async function zipSave(name,files){
+  if(!window.JSZip){toast('Brak modułu ZIP – odśwież stronę');return}
+  try{const z=new JSZip();for(const [n,r] of files)z.file(n,await getBlob(r,'mp3'));await saveFile(name+'.zip',await z.generateAsync({type:'blob'}))}
+  catch(e){toast('Nie udało się przygotować pliku')}
+}
+// mp3: first try a direct .mp3 save; if the host refuses the extension, offer a direct link to the file
+async function mp3Save(name,rec){
+  if(!downloads){await saveFile(name+'.mp3',await getBlob(rec,'mp3'));return}
+  if(downloads){
+    try{await downloads.save({filename:name+'.mp3',data:await getBlob(rec,'mp3')});toast('Zapisano: '+name+'.mp3');return}
+    catch(e){const c=e&&e.code;if(c==='declined')return;if(c==='rate_limited'){toast('Poczekaj chwilę i spróbuj ponownie');return}}
+    // .mp3 refused by the host: wrap the same mp3 in a ZIP
+    try{const z=new JSZip();z.file(name+'.mp3',await getBlob(rec,'mp3'));await downloads.save({filename:name+'.zip',data:await z.generateAsync({type:'blob'})});toast('Zapisano: '+name+' (mp3 w ZIP)');return}
+    catch(e){const c=e&&e.code;if(c==='declined')return;if(c==='rate_limited'){toast('Poczekaj chwilę i spróbuj ponownie');return}}
+  }
+  toast(downloads?'Nie udało się pobrać':'Pobieranie działa w aplikacji Claude');
+}
+function sheet(name,file){
+  let d=$('#sheet');if(!d){d=document.createElement('div');d.id='sheet';document.body.appendChild(d)}
+  const url=new URL(file,location.href).href;
+  d.innerHTML=`<div class="sh-bg"></div><div class="sh"><b>${esc(name)}.mp3</b>
+   <p>Otwórz plik mp3 i zapisz go z menu przeglądarki (⋮ / Udostępnij → Zapisz).</p>
+   <a class="btn pri" href="${esc(url)}" target="_blank" rel="noopener" download="${esc(name)}.mp3">${I.dl.replace('<svg','<svg width="16" height="16" fill="currentColor"')} Otwórz plik mp3</a>
+   <button class="btn" id="shzip">Pobierz jako ZIP</button><button class="btn" id="shx">Zamknij</button></div>`;
+  d.classList.add('on');
+  d.querySelector('.sh-bg').onclick=d.querySelector('#shx').onclick=()=>d.classList.remove('on');
+  d.querySelector('#shzip').onclick=()=>{d.classList.remove('on');zipSave(name,[[name+'.mp3',file]])};
+}
+async function dlOne(i){const it=current.items[i];if(!it.rec)return;await mp3Save(fname(it,i),it.rec)}
+async function dlZip(){
+  if(!downloads){toast('Pobieranie działa w aplikacji Claude');return}
+  if(!window.JSZip){toast('Brak modułu ZIP – odśwież stronę');return}
+  const b=$('#zip'); b.disabled=true; const old=b.innerHTML; b.textContent='Pakuję…';
+  try{
+    const z=new JSZip(); const dir=`Linia ${current.line.name} - ${safe(current.dir.head)}`;
+    for(const [i,it] of current.items.entries()) if(it.rec) z.file(`${dir}/${fname(it,i)}.mp3`,await getBlob(it.rec,'mp3'));
+    const blob=await z.generateAsync({type:'blob'});
+    await save(`${dir}.zip`,blob);
+  }catch(e){toast('Nie udało się zbudować ZIP')}
+  b.disabled=false;b.innerHTML=old;
+}
+
+// ---------- stops database ----------
+function stopsView(){
+  document.title='Przystanki – zapowiedzi';
+  const q=S.sq||'';const ql=q.trim().toLowerCase();
+  const AR=archStops(), arch=false;
+  let ls=arch?Object.keys(AR).sort((a,b)=>a.localeCompare(b,'pl')).filter(s=>!ql||s.toLowerCase().includes(ql))
+            :ALLSTOPS.filter(s=>(!S.onlyRec||DATA.stops[s])&&(!ql||s.toLowerCase().includes(ql)));
+  const shown=ls;
+  current={line:{name:'baza'},dir:{head:'przystanki'},items:[]};
+  shown.forEach(s=>{const r=arch?AR[s]:DATA.stops[s];current.items.push({kind:'stop',name:s,arch,note:arch?r.n:'',rec:r?{e:r,t:'p'}:null})});
+  $('#app').innerHTML=`
+  <header class="top"><div><h1><span class="led">ZAPOWIEDZI</span></h1><div class="sub">Baza przystanków · ${ALLSTOPS.filter(s=>DATA.stops[s]).length} z ${ALLSTOPS.length} nagranych</div></div></header>
+  ${tabsHTML("przystanki")}
+  ${arch?'<p class="empty-note">Nagrania przystanków, których nie ma w obecnym rozkładzie: dawne nazwy i zlikwidowane przystanki.</p>':''}
+  <div class="search"><input id="sq" type="search" placeholder="Szukaj przystanku…" value="${esc(q)}" autocomplete="off">
+  ${arch?'':`<button class="chip ${S.onlyRec?'on':''}" id="only">Tylko nagrane</button>`}</div>
+  <div class="list">${current.items.map((it,i)=>`
+    <div class="row ${it.rec?'has':''}" data-i="${i}"><div class="track"></div>
+      <div class="nm"><b>${esc(it.name)}</b><div class="tags">${it.arch?`<span class="tag fb">archiwalne</span>`:''}${it.arch?'':''}${[...(it.arch?[]:BYNAME[it.name]||[])].slice(0,12).map(n=>`<span class="tag">${esc(n)}</span>`).join('')}${(BYNAME[it.name]||new Set()).size>12?'<span class="tag">…</span>':''}</div></div>
+      <button class="ib play" data-p="${i}" ${it.rec?'':'disabled'} aria-label="Odtwórz">${I.play}</button>
+      ${true?`<button class="ib" data-sd="${i}" ${it.rec?'':'disabled'} aria-label="Pobierz">${I.dl}</button>`:''}
+    </div>`).join('')||'<div class="row"><div class="nm">Brak wyników</div></div>'}</div>
+  `;
+  bindTabs();
+  if($('#only'))$('#only').onclick=()=>{S.onlyRec=!S.onlyRec;stopsView()};
+  const qi=$('#sq');qi.oninput=()=>{S.sq=qi.value;const p=qi.selectionStart;stopsView();const n=$('#sq');n.focus();n.setSelectionRange(p,p)};
+  document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{const i=+b.dataset.p; if(Q.single===i&&!au.paused){stop();return} playQueue([i],true)});
+  document.querySelectorAll('[data-sd]').forEach(b=>b.onclick=()=>{const it=current.items[+b.dataset.sd];const n=safe(it.name);mp3Save(n,it.rec)});
+  markNow();
+}
+
+// ---------- tabs ----------
+const TABS=[['','Linie'],['przystanki','Przystanki'],['archiwum','Archiwum'],['braki','Braki']];
+function tabsHTML(cur){return `<div class="tabs">${TABS.map(([h,t])=>`<button class="chip ${h===cur?'on':''}" data-tab="${h}">${t}</button>`).join('')}</div>`}
+function bindTabs(){document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab})}
+function isLineIntro(k){return /^Linia \S+$/.test(k)}
+function archStops(){return Object.fromEntries(Object.entries(DATA.archive||{}).filter(([k])=>!isLineIntro(k)))}
+function bindRows(){
+  document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{const i=+b.dataset.p; if(Q.single===i&&!au.paused){stop();return} playQueue([i],true)});
+  document.querySelectorAll('[data-sd]').forEach(b=>b.onclick=()=>{const it=current.items[+b.dataset.sd];mp3Save(safe(it.name),it.rec)});
+  markNow();
+}
+const numN=x=>{const n=parseInt(x);return isNaN(n)?1e9:n};const numSort=(a,b)=>numN(a)-numN(b)||a.localeCompare(b);
+
+// ---------- archive: old lines + old stops ----------
+function archiveView(){
+  document.title='Archiwum – zapowiedzi';
+  const AR=DATA.archive||{}, sub=S.archTab||'l', q=S.aq||'', ql=q.trim().toLowerCase();
+  const lines=Object.keys(AR).filter(isLineIntro).sort((a,b)=>numSort(a.slice(6),b.slice(6)));
+  const AS=archStops(), stops=Object.keys(AS).sort((a,b)=>a.localeCompare(b,'pl'));
+  const list=sub==='l'?lines:stops.filter(k=>!ql||k.toLowerCase().includes(ql));
+  current={line:{name:'archiwum'},dir:{head:sub==='l'?'linie':'przystanki'},items:list.map(k=>({kind:'stop',name:k,arch:true,rec:{e:AR[k],t:'p'}}))};
+  $('#app').innerHTML=`
+  <header class="top"><div><h1><span class="led">ZAPOWIEDZI</span></h1><div class="sub">Archiwum · ${lines.length} linii, ${stops.length} przystanków</div></div></header>
+  ${tabsHTML('archiwum')}
+  <div class="tabs"><button class="chip ${sub==='l'?'on':''}" id="aL">Linie (${lines.length})</button><button class="chip ${sub==='s'?'on':''}" id="aS">Przystanki (${stops.length})</button></div>
+  <p class="empty-note">${sub==='l'?'Numery linii, których nie ma w obecnym rozkładzie.':'Nagrania przystanków, których nie ma w obecnym rozkładzie: dawne nazwy i zlikwidowane przystanki.'}</p>
+  ${sub==='s'?`<div class="search"><input id="aq" type="search" placeholder="Szukaj przystanku…" value="${esc(q)}" autocomplete="off"></div>`:''}
+  <div class="list">${current.items.map((it,i)=>`<div class="row has" data-i="${i}"><div class="nm"><b>${esc(sub==='l'?it.name.slice(6):it.name)}</b></div>
+      <button class="ib play" data-p="${i}" aria-label="Odtwórz">${I.play}</button><button class="ib" data-sd="${i}" aria-label="Pobierz">${I.dl}</button></div>`).join('')||'<div class="row"><div class="nm">Brak wyników</div></div>'}</div>`;
+  bindTabs();
+  $('#aL').onclick=()=>{S.archTab='l';archiveView()};$('#aS').onclick=()=>{S.archTab='s';archiveView()};
+  const qi=$('#aq');if(qi)qi.oninput=()=>{S.aq=qi.value;const p=qi.selectionStart;archiveView();const n=$('#aq');n.focus();n.setSelectionRange(p,p)};
+  bindRows();
+}
+
+// ---------- missing: lines without a line announcement, stops without a recording ----------
+function hasIntro(name){const ks=Object.keys(DATA.intros);return ks.some(k=>k.startsWith(name+'|')||k.startsWith(name+'@'))}
+function missingView(){
+  document.title='Braki – zapowiedzi';
+  const ml=DATA.lines.filter(l=>!hasIntro(l.name)).sort((a,b)=>numSort(a.name,b.name));
+  const ms=ALLSTOPS.filter(s=>!DATA.stops[s]).sort((a,b)=>a.localeCompare(b,'pl'));
+  $('#app').innerHTML=`
+  <header class="top"><div><h1><span class="led">ZAPOWIEDZI</span></h1><div class="sub">Braki · ${ml.length} linii, ${ms.length} przystanków</div></div></header>
+  ${tabsHTML('braki')}
+  <section class="group"><h2>Linie bez zapowiedzi liniowej (${ml.length})</h2>
+    ${ml.length?`<div class="grid">${ml.map(l=>`<button class="tile ${cls(l)}" data-l="${esc(l.name)}">${esc(l.name)}</button>`).join('')}</div>`:'<p class="empty-note">Wszystkie linie mają zapowiedź liniową.</p>'}</section>
+  <section class="group"><h2>Przystanki bez nagrania (${ms.length})</h2>
+    <div class="list">${ms.map(s=>`<div class="row miss"><div class="nm"><b>${esc(s)}</b><div class="tags">${[...(BYNAME[s]||[])].sort(numSort).map(n=>`<span class="tag">${esc(n)}</span>`).join('')}</div></div></div>`).join('')||'<p class="empty-note">Wszystkie przystanki mają nagranie.</p>'}</div></section>`;
+  bindTabs();document.querySelectorAll('[data-l]').forEach(b=>b.onclick=()=>{location.hash='l-'+encodeURIComponent(b.dataset.l)});
+}
+
+// ---------- routing ----------
+function route(){const h=location.hash.slice(1); if(h==='przystanki') stopsView(); else if(h==='archiwum'||h==='archiwalne-linie') archiveView(); else if(h==='braki') missingView(); else if(h.startsWith('l-')) lineView(decodeURIComponent(h.slice(2))); else home()}
+window.addEventListener('hashchange',()=>{stop();route();scrollTo(0,0)});
+(async()=>{
+  try{DATA=await (await fetch('data.json')).json()}catch(e){$('#app').innerHTML='<p class="empty-note">Nie udało się wczytać danych.</p>';return}
+  buildIndex(); route();
+  try{ if(window.claude&&claude.use){ const d=await claude.use('downloads'); if(d){downloads=d; route()} } }catch(e){}
+})();
+</script>
+</body>
+</html>
