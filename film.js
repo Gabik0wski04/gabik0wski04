@@ -64,24 +64,43 @@
     try { localStorage.setItem('routeFixes', JSON.stringify(mine)); } catch (e) {}
     return mine;
   }
+  // segs: { "<i>": [[lat,lon],...] waypoints of segment i, "p<i>": [lat,lon] moved position of stop i }
+  function proj(G, q, lo, hi) {             // distance along G of the point nearest to q, limited to [lo,hi]
+    let best = 1e18, bd = lo;
+    const kx = Math.cos(q[0] * rad);
+    for (let i = 1; i < G.pts.length; i++) {
+      if (G.cum[i] < lo || G.cum[i - 1] > hi) continue;
+      const a = G.pts[i - 1], b = G.pts[i];
+      const ax = (a[1] - q[1]) * kx, ay = a[0] - q[0], bx = (b[1] - q[1]) * kx, by = b[0] - q[0];
+      const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+      let u = L ? -(ax * dx + ay * dy) / L : 0; u = Math.max(0, Math.min(1, u));
+      const ex = ax + dx * u, ey = ay + dy * u, dd = ex * ex + ey * ey;
+      const dist = G.cum[i - 1] + (G.cum[i] - G.cum[i - 1]) * u;
+      if (dd < best && dist >= lo - 1 && dist <= hi + 1) { best = dd; bd = Math.max(lo, Math.min(hi, dist)); }
+    }
+    return bd;
+  }
   function applyFix(g, segs) {
     if (!segs || !Object.keys(segs).length) return g;
-    const G0 = prep(g), pts = [], cuts = [];
-    let d = 0;
+    const G0 = prep(g), pts = [], cuts = [], S = g.s, n = S.length;
     const between = (a, b) => { const o = []; for (let i = 0; i < G0.pts.length; i++) if (G0.cum[i] > a && G0.cum[i] < b) o.push(G0.pts[i]); return o; };
-    const S = g.s;
-    pts.push(at(G0, 0).p);
-    for (let i = 0; i < S.length; i++) {
-      const sp = at(G0, S[i][2]).p;
-      pts.push(sp); cuts.push(pts.length - 1);
-      if (i === S.length - 1) break;
+    const D = [], P = [];
+    for (let i = 0; i < n; i++) {
+      const mv = segs['p' + i];
+      if (mv) { D.push(proj(G0, mv, i ? D[i - 1] : 0, i < n - 1 ? S[i + 1][2] : G0.len)); P.push(mv); }
+      else { D.push(Math.max(S[i][2], i ? D[i - 1] : 0)); P.push(at(G0, S[i][2]).p); }
+    }
+    if (!segs.p0) pts.push(at(G0, 0).p);
+    for (let i = 0; i < n; i++) {
+      pts.push(P[i]); cuts.push(pts.length - 1);
+      if (i === n - 1) break;
       const fx = segs[i];
       if (fx && fx.length) fx.forEach(q => pts.push(q));
-      else between(S[i][2], S[i + 1][2]).forEach(q => pts.push(q));
+      else between(D[i], D[i + 1]).forEach(q => pts.push(q));
     }
-    between(S[S.length - 1][2], G0.len + 1).forEach(q => pts.push(q));
+    if (!segs['p' + (n - 1)]) between(D[n - 1], G0.len + 1).forEach(q => pts.push(q));
     const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + hav(pts[i - 1], pts[i]));
-    return { p: pts, s: S.map((st, i) => [st[0], st[1], cum[cuts[i]]]), len: cum[cum.length - 1] };
+    return { p: pts, s: S.map((st, i) => [P[i][0], P[i][1], cum[cuts[i]]]), len: cum[cum.length - 1] };
   }
 
   function prep(g) {
@@ -486,22 +505,36 @@
     const o = ui.opts, S = ui.raw.s, names = o.variant.stops;
     let segs = Object.assign({}, (ui.fixes[ui.fixKey] || {})), cur = 0, wps = (segs[0] || []).slice();
     const ed = document.createElement('div'); ed.id = 'fed';
-    ed.innerHTML = `<div class="fet"><select id="eseg">${S.slice(0, -1).map((x, i) => `<option value="${i}">${i + 1}. ${esc(names[i])} → ${esc(names[i + 1])}${segs[i] ? ' ✓' : ''}</option>`).join('')}</select>
-      <div class="fc"><button class="chip" id="eundo">Cofnij punkt</button><button class="chip" id="eclr">Wyczyść odcinek</button>
+    ed.innerHTML = `<div class="fet"><select id="eseg">${S.slice(0, -1).map((x, i) => `<option value="${i}">${i + 1}. ${esc(names[i])} → ${esc(names[i + 1])}${segs[i] || segs['p' + i] || segs['p' + (i + 1)] ? ' ✓' : ''}</option>`).join('')}</select>
+      <div class="fc"><button class="chip" id="eundo">Cofnij punkt</button><button class="chip" id="eclr">Wyczyść odcinek</button><button class="chip" id="eprs">Przywróć przystanki</button>
       <button class="btn pri" id="esave">Zapisz odcinek</button><button class="btn" id="eexp">Wyślij poprawki</button><button class="btn" id="ex">Gotowe</button></div>
-      <div class="st" id="est">Wybierz odcinek, potem klikaj na mapie po kolei punkty, którędy naprawdę jedzie pojazd.</div></div><div id="emap"></div>`;
+      <div class="st" id="est">Wybierz odcinek, potem klikaj na mapie po kolei punkty, którędy naprawdę jedzie pojazd. Żółte kółka przystanków możesz przeciągnąć w inne miejsce.</div></div><div id="emap"></div>`;
     document.body.appendChild(ed);
     const em = new maplibregl.Map({ container: ed.querySelector('#emap'), style: (window.Film && Film.styleOverride) || STYLES[ui.style], attributionControl: { compact: true } });
     const fc = pts => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: pts.map(p => [p[1], p[0]]) } });
+    const pos = i => segs['p' + i] || [S[i][0], S[i][1]];
+    const mk = [0, 1].map(k => {
+      const el = document.createElement('div');
+      el.style.cssText = 'width:22px;height:22px;border-radius:50%;background:#ffd400;border:3px solid #000;cursor:grab;box-shadow:0 0 0 2px #fff';
+      el.addEventListener('click', e => e.stopPropagation());
+      const m = new maplibregl.Marker({ element: el, draggable: true });
+      m.on('dragend', () => {
+        const i = cur + k, ll = m.getLngLat();
+        segs['p' + i] = [+ll.lat.toFixed(6), +ll.lng.toFixed(6)]; saveMine(ui.fixKey, segs); draw();
+        est(`Przesunięto przystanek „${names[i]}”. Zapisane – trasa jest przycinana do nowego miejsca.`);
+      });
+      return m;
+    });
     const draw = () => {
       if (!em.getSource('r')) return;
       const G = prep(applyFix(ui.raw, segs));
       em.getSource('r').setData(fc(G.pts));
-      em.getSource('w').setData(fc([[S[cur][0], S[cur][1]], ...wps, [S[cur + 1][0], S[cur + 1][1]]]));
+      em.getSource('w').setData(fc([pos(cur), ...wps, pos(cur + 1)]));
       em.getSource('wp').setData({ type: 'FeatureCollection', features: wps.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p[1], p[0]] } })) });
-      em.getSource('ss').setData({ type: 'FeatureCollection', features: [S[cur], S[cur + 1]].map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p[1], p[0]] } })) });
+      em.getSource('st').setData({ type: 'FeatureCollection', features: S.map((x, i) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [pos(i)[1], pos(i)[0]] } })) });
+      mk.forEach((m, k) => m.setLngLat([pos(cur + k)[1], pos(cur + k)[0]]));
     };
-    const focus = () => { const b = new maplibregl.LngLatBounds([S[cur][1], S[cur][0]], [S[cur][1], S[cur][0]]); b.extend([S[cur + 1][1], S[cur + 1][0]]); wps.forEach(p => b.extend([p[1], p[0]])); em.fitBounds(b, { padding: 80, maxZoom: 17, duration: 0 }); };
+    const focus = () => { const a = pos(cur), c = pos(cur + 1), b = new maplibregl.LngLatBounds([a[1], a[0]], [a[1], a[0]]); b.extend([c[1], c[0]]); wps.forEach(p => b.extend([p[1], p[0]])); em.fitBounds(b, { padding: 80, maxZoom: 17, duration: 0 }); };
     em.on('load', () => {
       em.addSource('r', { type: 'geojson', data: fc([]) }); em.addSource('w', { type: 'geojson', data: fc([]) });
       em.addSource('wp', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
@@ -510,8 +543,8 @@
       em.addLayer({ id: 'r', type: 'line', source: 'r', paint: { 'line-color': '#ee1c25', 'line-width': 4, 'line-opacity': 0.8 } });
       em.addLayer({ id: 'w', type: 'line', source: 'w', paint: { 'line-color': '#ffd400', 'line-width': 5 } });
       em.addLayer({ id: 'st', type: 'circle', source: 'st', paint: { 'circle-radius': 5, 'circle-color': '#fff', 'circle-stroke-color': '#123b96', 'circle-stroke-width': 2 } });
-      em.addLayer({ id: 'ss', type: 'circle', source: 'ss', paint: { 'circle-radius': 9, 'circle-color': '#ffd400', 'circle-stroke-color': '#000', 'circle-stroke-width': 2 } });
       em.addLayer({ id: 'wp', type: 'circle', source: 'wp', paint: { 'circle-radius': 5, 'circle-color': '#ffd400', 'circle-stroke-color': '#000', 'circle-stroke-width': 1.5 } });
+      mk.forEach(m => m.setLngLat([0, 0]).addTo(em));
       draw(); focus();
     });
     const est = t => { ed.querySelector('#est').textContent = t; };
@@ -520,6 +553,7 @@
     sel.onchange = () => { cur = +sel.value; wps = (segs[cur] || []).slice(); draw(); focus(); est(segs[cur] ? 'Ten odcinek ma już poprawkę – możesz ją zmienić.' : 'Klikaj na mapie punkty trasy między żółtymi przystankami.'); };
     ed.querySelector('#eundo').onclick = () => { wps.pop(); draw(); };
     ed.querySelector('#eclr').onclick = () => { wps = []; delete segs[cur]; saveMine(ui.fixKey, segs); sel.options[cur].text = sel.options[cur].text.replace(' ✓', ''); draw(); est('Odcinek przywrócony do przebiegu z rozkładu.'); };
+    ed.querySelector('#eprs').onclick = () => { delete segs['p' + cur]; delete segs['p' + (cur + 1)]; saveMine(ui.fixKey, segs); draw(); focus(); est('Przystanki tego odcinka wróciły na miejsce z rozkładu.'); };
     ed.querySelector('#esave').onclick = () => {
       if (!wps.length) { est('Najpierw kliknij na mapie punkty trasy.'); return; }
       segs[cur] = wps.slice(); saveMine(ui.fixKey, segs);
