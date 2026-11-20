@@ -187,7 +187,7 @@ function lineView(name){
   <div class="actions">
     <button class="btn pri" id="playall" ${items.some(x=>x.rec)?'':'disabled'}>${I.play.replace('<svg','<svg width="16" height="16"')} Odtwórz całą trasę</button>
     <button class="btn" id="zip" ${items.some(x=>x.rec)?'':'disabled'}>${I.dl.replace('<svg','<svg width="16" height="16" fill="currentColor"')} Pobierz trasę (mp3)</button>
-    <button class="btn" id="film">🎬 Filmik z trasy</button>
+    <button class="btn" id="filmbtn">🎬 Filmik z trasy</button>
   </div>
   <div class="empty-note" style="margin-top:-4px">${nRec}/${v.stops.length} przystanków z nagraniem${intro?'':' · brak zapowiedzi „linia, kierunek” dla tego kierunku'}</div>
   <div class="list">${items.map((it,i)=>`
@@ -205,7 +205,7 @@ function lineView(name){
   document.querySelectorAll('[data-dl]').forEach(b=>b.onclick=()=>dlOne(+b.dataset.dl));
   $('#playall').onclick=()=>{const idx=items.map((x,i)=>x.rec?i:-1).filter(i=>i>=0);playQueue(idx,false)};
   $('#zip').onclick=dlZip;
-  $('#film').onclick=async()=>{stop();
+  $('#filmbtn').onclick=async()=>{stop();
     if(!window.Film){await new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='film.js';sc.onload=res;sc.onerror=rej;document.head.appendChild(sc)}).catch(()=>{})}
     if(!window.Film){toast('Nie udało się wczytać filmiku');return}
     Film.open({line:l.name,dir:d.dir,vi,variant:v,tram:l.type==='tram',intro:intro?{e:intro,t:'a'}:null,items:items.filter(x=>x.kind==='stop')})};
