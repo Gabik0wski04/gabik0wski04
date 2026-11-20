@@ -132,8 +132,8 @@ function recFor(stop,req){const r=DATA.stops[stop]||(DATA.archive||{})[stop];ret
 // audio lives in pack files (packs/NNN.bin); entries hold [offset,length] per variant
 const PACKS=new Map(), URLS=new Map();
 function pack(k){if(!PACKS.has(k))PACKS.set(k,fetch('packs/'+String(k).padStart(3,'0')+'.mp3').then(r=>{if(!r.ok)throw new Error(r.status);return r.arrayBuffer()}).catch(e=>{PACKS.delete(k);throw e}));return PACKS.get(k)}
-async function getBlob(rec,fmt){const key=rec.t+(fmt==='mp4'?'m':'');const [o,l]=rec.e[key];const buf=await pack(rec.e.k);return new Blob([buf.slice(o,o+l)],{type:fmt==='mp4'?'audio/mp4':'audio/mpeg'})}
-async function blobURL(rec){const id=rec.e.k+':'+rec.e[rec.t][0];if(!URLS.has(id))URLS.set(id,URL.createObjectURL(await getBlob(rec,'mp3')));return URLS.get(id)}
+async function getBlob(rec,fmt){if(rec.f)return await (await fetch(rec.f)).blob();const key=rec.t+(fmt==='mp4'?'m':'');const [o,l]=rec.e[key];const buf=await pack(rec.e.k);return new Blob([buf.slice(o,o+l)],{type:fmt==='mp4'?'audio/mp4':'audio/mpeg'})}
+async function blobURL(rec){const id=rec.f||rec.e.k+':'+rec.e[rec.t][0];if(!URLS.has(id))URLS.set(id,URL.createObjectURL(await getBlob(rec,'mp3')));return URLS.get(id)}
 
 // ---------- home ----------
 function home(){
@@ -222,7 +222,7 @@ async function playPos(){
   if(Q.list!==list||Q.pos!==my) return;
   au.src=url; au.play().catch(()=>toast('Stuknij ▶ jeszcze raz'));
   // prefetch next clip's pack
-  const nx=current.items[Q.list[Q.pos+1]]; if(nx&&nx.rec) pack(nx.rec.e.k).catch(()=>{});
+  const nx=current.items[Q.list[Q.pos+1]]; if(nx&&nx.rec&&nx.rec.e) pack(nx.rec.e.k).catch(()=>{});
   $('#player').classList.add('on'); $('#pt').textContent=it.name;
   $('#ps').textContent=(current.line.name==='baza'?'Baza przystanków':`Linia ${current.line.name} → ${current.dir.head}`)+(Q.list.length>1?` · ${Q.pos+1}/${Q.list.length}`:'');
   markNow();
@@ -331,7 +331,7 @@ function stopsView(){
 }
 
 // ---------- tabs ----------
-const TABS=[['','Linie'],['przystanki','Przystanki'],['archiwum','Archiwum'],['braki','Braki']];
+const TABS=[['','Linie'],['przystanki','Przystanki'],['specjalne','Specjalne'],['archiwum','Archiwum'],['braki','Braki']];
 function tabsHTML(cur){return `<div class="tabs">${TABS.map(([h,t])=>`<button class="chip ${h===cur?'on':''}" data-tab="${h}">${t}</button>`).join('')}</div>`}
 function bindTabs(){document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab})}
 function isLineIntro(k){return /^Linia \S+$/.test(k)}
@@ -342,6 +342,20 @@ function bindRows(){
   markNow();
 }
 const numN=x=>{const n=parseInt(x);return isNaN(n)?1e9:n};const numSort=(a,b)=>numN(a)-numN(b)||a.localeCompare(b);
+
+// ---------- special announcements (fixed phrases: Linia, Kierunek, Następny przystanek, zones…) ----------
+let SPECIAL=null;
+async function specialView(){
+  document.title='Zapowiedzi specjalne';
+  if(!SPECIAL){try{SPECIAL=await (await fetch('special/list.json')).json()}catch(e){SPECIAL=[]}}
+  current={line:{name:'specjalne'},dir:{head:'zapowiedzi'},items:SPECIAL.map(x=>({kind:'stop',name:x.name,rec:{f:x.f}}))};
+  $('#app').innerHTML=`
+  <header class="top"><div><h1><span class="led">ZAPOWIEDZI</span></h1><div class="sub">Zapowiedzi specjalne · ${SPECIAL.length}</div></div></header>
+  ${tabsHTML('specjalne')}
+  <div class="list">${current.items.map((it,i)=>`<div class="row has" data-i="${i}"><div class="nm"><b>${esc(it.name)}</b></div>
+      <button class="ib play" data-p="${i}" aria-label="Odtwórz">${I.play}</button><button class="ib" data-sd="${i}" aria-label="Pobierz">${I.dl}</button></div>`).join('')}</div>`;
+  bindTabs();bindRows();
+}
 
 // ---------- archive: old lines + old stops ----------
 function archiveView(){
@@ -382,7 +396,7 @@ function missingView(){
 }
 
 // ---------- routing ----------
-function route(){const h=location.hash.slice(1); if(h==='przystanki') stopsView(); else if(h==='archiwum'||h==='archiwalne-linie') archiveView(); else if(h==='braki') missingView(); else if(h.startsWith('l-')) lineView(decodeURIComponent(h.slice(2))); else home()}
+function route(){const h=location.hash.slice(1); if(h==='przystanki') stopsView(); else if(h==='specjalne') specialView(); else if(h==='archiwum'||h==='archiwalne-linie') archiveView(); else if(h==='braki') missingView(); else if(h.startsWith('l-')) lineView(decodeURIComponent(h.slice(2))); else home()}
 window.addEventListener('hashchange',()=>{stop();route();scrollTo(0,0)});
 (async()=>{
   try{DATA=await (await fetch('data.json')).json()}catch(e){$('#app').innerHTML='<p class="empty-note">Nie udało się wczytać danych.</p>';return}

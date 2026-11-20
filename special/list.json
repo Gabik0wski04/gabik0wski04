@@ -1,0 +1,74 @@
+[
+{
+"name": "Linia",
+"f": "special/linia.mp3"
+},
+{
+"name": "Kierunek",
+"f": "special/kierunek.mp3"
+},
+{
+"name": "Kierunek (stara wersja)",
+"f": "special/kierunek-stara-wersja.mp3"
+},
+{
+"name": "Przystanek (wersja 1)",
+"f": "special/przystanek-wersja-1.mp3"
+},
+{
+"name": "Przystanek (wersja 2)",
+"f": "special/przystanek-wersja-2.mp3"
+},
+{
+"name": "Następny przystanek",
+"f": "special/nastepny-przystanek.mp3"
+},
+{
+"name": "Następny przystanek (stara wersja)",
+"f": "special/nastepny-przystanek-stara-wersja.mp3"
+},
+{
+"name": "Przystanek na żądanie",
+"f": "special/przystanek-na-zadanie.mp3"
+},
+{
+"name": "Przystanek końcowy",
+"f": "special/przystanek-koncowy.mp3"
+},
+{
+"name": "Koniec trasy, prosimy opuścić pojazd. Dziękujemy za wspólną podróż",
+"f": "special/koniec-trasy-prosimy-opuscic-pojazd-dziekujemy-za-wspolna-podroz.mp3"
+},
+{
+"name": "Trasa zmieniona",
+"f": "special/trasa-zmieniona.mp3"
+},
+{
+"name": "Bądź wrażliwy, ustąp miejsca",
+"f": "special/badz-wrazliwy-ustap-miejsca.mp3"
+},
+{
+"name": "Uwaga! Zmiana strefy biletowej",
+"f": "special/uwaga-zmiana-strefy-biletowej.mp3"
+},
+{
+"name": "Uwaga! Ostatni przystanek w pierwszej strefie biletowej",
+"f": "special/uwaga-ostatni-przystanek-w-pierwszej-strefie-biletowej.mp3"
+},
+{
+"name": "Uwaga! Ostatni przystanek w drugiej strefie biletowej",
+"f": "special/uwaga-ostatni-przystanek-w-drugiej-strefie-biletowej.mp3"
+},
+{
+"name": "Uwaga! Ostatni przystanek w trzeciej strefie biletowej",
+"f": "special/uwaga-ostatni-przystanek-w-trzeciej-strefie-biletowej.mp3"
+},
+{
+"name": "Koniec strefy miejskiej, początek strefy aglomeracyjnej",
+"f": "special/koniec-strefy-miejskiej-poczatek-strefy-aglomeracyjnej.mp3"
+},
+{
+"name": "Granica miasta, druga strefa aglomeracyjna",
+"f": "special/granica-miasta-druga-strefa-aglomeracyjna.mp3"
+}
+]
