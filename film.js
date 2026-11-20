@@ -34,9 +34,9 @@
   // destination text for the LED display; the LED font draws these characters as symbols
   function ledText(line, dest) {
     let t = dest;
-    if (/Dworzec Główny (Zachód|Wschód)/.test(dest)) t += ',';   // train
-    if (/^8/.test(line)) t += "'";                                // cemetery line
-    if (/Kraków Airport/.test(dest)) t += '{';                    // plane
+    if (/Dworzec Główny (Zachód|Wschód)/.test(dest)) t += ' ,';   // train
+    if (/^8/.test(line)) t += " '";                                // cemetery line
+    if (/Kraków Airport/.test(dest)) t += ' {';                    // plane
     return t;
   }
 
