@@ -166,6 +166,10 @@ function home(){
 
 // ---------- line ----------
 let current=null; // {line,dir,items}
+// "last stop in zone N" announcements (special recordings), played after the last stop before the zone changes
+const ZONE={'1':{name:'Uwaga! Ostatni przystanek w pierwszej strefie biletowej',f:'special/uwaga-ostatni-przystanek-w-pierwszej-strefie-biletowej.mp3'},
+ '2':{name:'Uwaga! Ostatni przystanek w drugiej strefie biletowej',f:'special/uwaga-ostatni-przystanek-w-drugiej-strefie-biletowej.mp3'},
+ '3':{name:'Uwaga! Ostatni przystanek w trzeciej strefie biletowej',f:'special/uwaga-ostatni-przystanek-w-trzeciej-strefie-biletowej.mp3'}};
 function lineView(name){
   const l=DATA.lines.find(x=>x.name===name); if(!l){location.hash='';return}
   document.title='Linia '+l.name+' – zapowiedzi';
@@ -176,7 +180,10 @@ function lineView(name){
   const intro=term!==d.head?DATA.intros[name+'@'+term]:DATA.intros[name+'|'+d.dir];
   const items=[];
   if(intro) items.push({kind:'intro',term,name:`Linia ${l.name}, kierunek ${term}`,rec:{e:intro,t:'a'}});
-  v.stops.forEach((s,i)=>items.push({kind:'stop',idx:i+1,name:s,req:v.req[i],rec:recFor(s,v.req[i])}));
+  v.stops.forEach((s,i)=>{items.push({kind:'stop',idx:i+1,name:s,req:v.req[i],rec:recFor(s,v.req[i])});
+    const z=v.zone&&v.zone[i], zn=v.zone&&v.zone[i+1];
+    if(z&&zn&&z!==zn&&ZONE[z]) items.push({kind:'zone',idx:String(i+1).padStart(2,'0')+'a',name:ZONE[z].name,rec:{f:ZONE[z].f}});  // leaving zone z
+  });
   current={line:l,dir:d,items};
   const nRec=items.filter(x=>x.kind==='stop'&&x.rec).length;
   $('#app').innerHTML=`
@@ -192,8 +199,8 @@ function lineView(name){
   <div class="empty-note" style="margin-top:-4px">${nRec}/${v.stops.length} przystanków z nagraniem${intro?'':' · brak zapowiedzi „linia, kierunek” dla tego kierunku'}</div>
   <div class="list">${items.map((it,i)=>`
     <div class="row ${it.rec?'has':''} ${it.kind==='intro'?'intro':''}" data-i="${i}">
-      <div class="n">${it.kind==='intro'?'':it.idx}</div><div class="track"></div>
-      <div class="nm"><b>${esc(it.name)}</b><div class="tags">${it.kind==='intro'?'<span class="tag">zapowiedź linii</span>':''}${it.req?'<span class="tag nz">na żądanie</span>':''}${!it.rec?'<span class="tag">brak nagrania</span>':''}</div></div>
+      <div class="n">${it.kind==='stop'?it.idx:''}</div><div class="track"></div>
+      <div class="nm"><b>${esc(it.name)}</b><div class="tags">${it.kind==='intro'?'<span class="tag">zapowiedź linii</span>':''}${it.kind==='zone'?'<span class="tag">strefa biletowa</span>':''}${it.req?'<span class="tag nz">na żądanie</span>':''}${!it.rec?'<span class="tag">brak nagrania</span>':''}</div></div>
       <button class="ib play" data-p="${i}" ${it.rec?'':'disabled'} aria-label="Odtwórz">${I.play}</button>
       ${true?`<button class="ib" data-dl="${i}" ${it.rec?'':'disabled'} aria-label="Pobierz">${I.dl}</button>`:''}
     </div>`).join('')}</div>
@@ -208,7 +215,7 @@ function lineView(name){
   $('#filmbtn').onclick=async()=>{stop();
     if(!window.Film){await new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='film.js?v='+Date.now();sc.onload=res;sc.onerror=rej;document.head.appendChild(sc)}).catch(()=>{})}
     if(!window.Film){toast('Nie udało się wczytać filmiku');return}
-    Film.open({line:l.name,dir:d.dir,vi,variant:v,tram:l.type==='tram',intro:intro?{e:intro,t:'a'}:null,items:items.filter(x=>x.kind==='stop')})};
+    Film.open({line:l.name,dir:d.dir,vi,variant:v,tram:l.type==='tram',intro:intro?{e:intro,t:'a'}:null,items:items.filter(x=>x.kind==='stop').map((x,i)=>{const z=items[items.indexOf(x)+1];return {...x,zone:z&&z.kind==='zone'?z.rec:null}})})};
   markNow();
 }
 
@@ -287,14 +294,13 @@ function sheet(name,file){
 }
 async function dlOne(i){const it=current.items[i];if(!it.rec)return;await mp3Save(fname(it,i),it.rec)}
 async function dlZip(){
-  if(!downloads){toast('Pobieranie działa w aplikacji Claude');return}
   if(!window.JSZip){toast('Brak modułu ZIP – odśwież stronę');return}
   const b=$('#zip'); b.disabled=true; const old=b.innerHTML; b.textContent='Pakuję…';
   try{
     const z=new JSZip(); const dir=`Linia ${current.line.name} - ${safe(current.dir.head)}`;
     for(const [i,it] of current.items.entries()) if(it.rec) z.file(`${dir}/${fname(it,i)}.mp3`,await getBlob(it.rec,'mp3'));
     const blob=await z.generateAsync({type:'blob'});
-    await save(`${dir}.zip`,blob);
+    await saveFile(`${dir}.zip`,blob);
   }catch(e){toast('Nie udało się zbudować ZIP')}
   b.disabled=false;b.innerHTML=old;
 }

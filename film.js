@@ -360,6 +360,7 @@
     let chgBuf = null;
     if (ui.changed) { try { chgBuf = await ac.decodeAudioData(await (await fetch('lib/trasa_zmieniona.mp3')).arrayBuffer()); } catch (e) {} }
     const stopBufs = await decodeAll(ac, o.items.map(x => x.rec));
+    const zoneBufs = await decodeAll(ac, o.items.map(x => x.zone || null));
     let rec = null, chunks = [], mime = '';
     if (record) {
       const dest = ac.createMediaStreamDestination(); gain.connect(dest);
@@ -397,6 +398,7 @@
         ui.scene.sign = { name, req: o.items[i] && o.items[i].req, t0: now() };
         const ts = now();
         await playBuf(aud, stopBufs[i]);
+        if (zoneBufs[i]) { await sleep(300); await playBuf(aud, zoneBufs[i]); }   // last stop in this ticket zone
         await sleep(Math.max(0, 1300 - (now() - ts) * 1000) + 250);
         ui.scene.sign.out = now();
         if (i === G.stops.length - 1) break;
