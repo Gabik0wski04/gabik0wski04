@@ -89,7 +89,7 @@
     const x0 = nx + nw + 48, avail = W - x0 - 16, tw = c.measureText(text).width;
     c.beginPath(); c.rect(x0, y0, W - x0, bh); c.clip();
     c.shadowColor = '#ff9a1a'; c.shadowBlur = 12; c.fillStyle = '#ffb02e';
-    if (tw <= avail) c.fillText(text, x0, base);
+    if (tw <= avail) c.fillText(text, x0 + (avail - tw) / 2, base);
     else {
       const gap = 260, per = tw + gap, off = (t * 150) % per;
       c.fillText(text, x0 - off, base); c.fillText(text, x0 - off + per, base);
@@ -116,6 +116,7 @@
   }
   // stop sign: the user's D-15 / D-17 sign image on a white card with the stop name, centred
   const IMG = {};
+  const NAMEFONT = 'Museo, "Museo Sans", Arial, Helvetica, sans-serif';
   function loadImg(k, src) { return new Promise(r => { const i = new Image(); i.onload = () => { IMG[k] = i; r(); }; i.onerror = r; i.src = src; }); }
   function drawSign(c, name, tram, req, k) {
     if (k <= 0) return;
@@ -130,15 +131,16 @@
     rr(c, x, y, cw, ch, 34); c.fill(); c.shadowBlur = 0;
     const ix = x + 40, iy = y + 40;
     if (img) c.drawImage(img, ix, iy, iw, ih);
-    if (req) {                                              // on-request stop: N/Ż in the blue band
-      c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.font = 'bold 120px Arial, Helvetica, sans-serif';
-      c.fillText('N/Ż', W / 2, iy + ih * (tram ? 0.865 : 0.84));
+    if (req) {                                              // on-request stop: like the real plate under the sign
+      c.fillStyle = '#f7a81b'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.font = `700 62px ${NAMEFONT}`;
+      c.fillText('NA ŻĄDANIE', W / 2, iy + ih * (tram ? 0.865 : 0.84));
     }
+    const label = name + (req ? '  N/Ż' : '');
     c.fillStyle = '#111'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    let fs = 58; c.font = `500 ${fs}px Arial, Helvetica, sans-serif`;
-    while (c.measureText(name).width > cw - 50 && fs > 28) { fs -= 2; c.font = `500 ${fs}px Arial, Helvetica, sans-serif`; }
-    c.fillText(name, W / 2, y + ch - 80);
+    let fs = 60; c.font = `500 ${fs}px ${NAMEFONT}`;
+    while (c.measureText(label).width > cw - 50 && fs > 28) { fs -= 2; c.font = `500 ${fs}px ${NAMEFONT}`; }
+    c.fillText(label, W / 2, y + ch - 80);
     c.restore();
   }
   function drawKm(c, pt, km) {
