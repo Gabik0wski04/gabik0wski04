@@ -184,7 +184,8 @@
     }
     c.fillStyle = '#111'; c.textAlign = 'center'; c.textBaseline = 'middle';
     c.font = `500 ${L.fs}px ${NAMEFONT}`;
-    L.lines.forEach((ln, i) => c.fillText(ln, W / 2, y + ih + 40 + 80 + i * L.fs * 1.15));
+    const lh = L.fs * 1.15, mid = (iy + ih + y + ch) / 2;           // centre of the white area under the sign
+    L.lines.forEach((ln, i) => c.fillText(ln, W / 2, mid + (i - (L.lines.length - 1) / 2) * lh));
     c.restore();
   }
   function drawKm(c, pt, km) {
