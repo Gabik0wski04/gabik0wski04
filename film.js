@@ -174,12 +174,18 @@
     if (neg) negNumber(c, num, fs, nx, base, nw, y0, bh);
     else { c.shadowColor = '#ff9a1a'; c.shadowBlur = 12; c.fillStyle = '#ffb02e'; c.fillText(num, nx, base); }
     const x0 = nx + nw + 48, avail = W - x0 - 16, tw = c.measureText(text).width;
-    c.beginPath(); c.rect(x0, y0, W - x0, bh); c.clip();
     c.shadowColor = '#ff9a1a'; c.shadowBlur = 12; c.fillStyle = '#ffb02e';
-    if (tw <= avail) c.fillText(text, x0 + (avail - tw) / 2, base);
+    if (tw <= avail) { c.beginPath(); c.rect(x0, y0, W - x0, bh); c.clip(); c.fillText(text, x0 + (avail - tw) / 2, base); }
     else {
-      const gap = 260, per = tw + gap, off = (t * 150) % per;
-      c.fillText(text, x0 - off, base); c.fillText(text, x0 - off + per, base);
+      // extra symbols at the end (train / cemetery / plane) stay still at the right edge, only the direction scrolls
+      const m = text.match(/^(.*?)((?:\s+[,'{])+)\s*$/);
+      const body = m ? m[1] : text, sym = m ? m[2].trim() : '';
+      const sw = sym ? c.measureText(sym).width : 0, x1 = W - 16 - sw;
+      if (sym) c.fillText(sym, x1, base);
+      const right = sym ? x1 - 24 : W, bw = c.measureText(body).width;
+      c.beginPath(); c.rect(x0, y0, right - x0, bh); c.clip();
+      const gap = 260, per = bw + gap, off = (t * 150) % per;
+      c.fillText(body, x0 - off, base); c.fillText(body, x0 - off + per, base);
     }
     c.restore();
   }
