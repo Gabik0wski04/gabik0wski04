@@ -26,6 +26,14 @@
   const ATTR = { sat: 'Zdjęcia: Esri, Maxar, Earthstar Geographics', map: '© OpenStreetMap · OpenFreeMap' };
 
   let ui = null, run = null;
+  // destination text for the LED display; the LED font draws these characters as symbols
+  function ledText(line, dest) {
+    let t = dest;
+    if (/Dworzec Główny (Zachód|Wschód)/.test(dest)) t += ',';   // train
+    if (/^8/.test(line)) t += "'";                                // cemetery line
+    if (/Kraków Airport/.test(dest)) t += '{';                    // plane
+    return t;
+  }
 
   // ---------- geometry helpers ----------
   const R = 6371000, rad = Math.PI / 180;
@@ -64,37 +72,27 @@
   // ---------- drawing ----------
   function rr(c, x, y, w, h, r) { c.beginPath(); c.roundRect(x, y, w, h, r); }
 
-  // LED destination display: text rasterised to a dot matrix, scrolling if wider than the bar
-  function ledBitmap(text) {
-    const cv = document.createElement('canvas'), c = cv.getContext('2d');
-    const rows = 16; c.font = 'bold 15px Arial, Helvetica, sans-serif';
-    const w = Math.ceil(c.measureText(text).width) + 2;
-    cv.width = w; cv.height = rows;
-    c.font = 'bold 15px Arial, Helvetica, sans-serif'; c.fillStyle = '#fff'; c.textBaseline = 'middle';
-    c.fillText(text, 1, rows / 2 + 1);
-    const d = c.getImageData(0, 0, w, rows).data, on = [];
-    for (let y = 0; y < rows; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 110) on.push([x, y]);
-    return { w, rows, on };
-  }
-  function drawLED(c, led, t) {
-    const y0 = 110, bh = 150, pitch = 8.6, r = 3.3;
+  // LED destination display in the user's LED font: line number fixed, direction text scrolls
+  function drawLED(c, num, text, neg, t) {
+    const y0 = 110, bh = 150, fs = 118, base = y0 + bh / 2 + fs * 0.33;
     c.fillStyle = '#050505'; c.fillRect(0, y0, W, bh);
-    c.fillStyle = '#1a1206';                                   // unlit dots grid
-    const top = y0 + (bh - led.rows * pitch) / 2;
-    const totalW = led.w * pitch, gap = 60 * pitch;
-    const scroll = totalW > W - 40;
-    let off = scroll ? 20 - ((t * 140) % (totalW + gap)) : (W - totalW) / 2;
     c.save(); c.beginPath(); c.rect(0, y0, W, bh); c.clip();
-    c.shadowColor = '#ff9a1a'; c.shadowBlur = 10; c.fillStyle = '#ffb02e';
-    const reps = scroll ? [0, totalW + gap] : [0];
-    for (const rp of reps) {
-      c.beginPath();
-      for (const [x, y] of led.on) {
-        const px = off + rp + x * pitch, py = top + y * pitch;
-        if (px < -10 || px > W + 10) continue;
-        c.moveTo(px + r, py); c.arc(px, py, r, 0, 7);
-      }
-      c.fill();
+    c.font = `${fs}px Linia, monospace`; c.textBaseline = 'alphabetic'; c.textAlign = 'left';
+    const nw = c.measureText(num).width, nx = 24;
+    if (neg) {                                              // negative: lit block, dark digits
+      c.fillStyle = '#ffb02e'; c.shadowColor = '#ff9a1a'; c.shadowBlur = 14;
+      c.fillRect(nx - 12, y0 + 14, nw + 24, bh - 28); c.shadowBlur = 0;
+      c.fillStyle = '#050505'; c.fillText(num, nx, base);
+    } else {
+      c.shadowColor = '#ff9a1a'; c.shadowBlur = 12; c.fillStyle = '#ffb02e'; c.fillText(num, nx, base);
+    }
+    const x0 = nx + nw + 48, avail = W - x0 - 16, tw = c.measureText(text).width;
+    c.beginPath(); c.rect(x0, y0, W - x0, bh); c.clip();
+    c.shadowColor = '#ff9a1a'; c.shadowBlur = 12; c.fillStyle = '#ffb02e';
+    if (tw <= avail) c.fillText(text, x0, base);
+    else {
+      const gap = 260, per = tw + gap, off = (t * 150) % per;
+      c.fillText(text, x0 - off, base); c.fillText(text, x0 - off + per, base);
     }
     c.restore();
   }
@@ -116,28 +114,31 @@
     for (const f of wx) { c.beginPath(); c.arc(x + w * f, cy, wr, 0, 7); c.fill(); c.fillStyle = '#fff';
       c.beginPath(); c.arc(x + w * f, cy, wr * 0.35, 0, 7); c.fill(); c.fillStyle = '#000'; }
   }
-  // stop sign (blue frame, white field, pictogram) on a white card with the stop name
-  function drawSign(c, name, tram, k) {
+  // stop sign: the user's D-15 / D-17 sign image on a white card with the stop name, centred
+  const IMG = {};
+  function loadImg(k, src) { return new Promise(r => { const i = new Image(); i.onload = () => { IMG[k] = i; r(); }; i.onerror = r; i.src = src; }); }
+  function drawSign(c, name, tram, req, k) {
     if (k <= 0) return;
-    const cw = 760, ch = 1000, x = 90, y = 330;
+    const img = IMG[tram ? 'tram' : 'bus'];
+    const iw = 560, ih = img ? iw * img.height / img.width : 700;
+    const cw = iw + 80, ch = ih + 200, x = (W - cw) / 2, y = (H - ch) / 2 - 60;
     c.save();
     c.globalAlpha = Math.min(1, k * 1.4);
     const sc = 0.85 + 0.15 * ease(Math.min(1, k));
-    c.translate(x + cw / 2, y + ch / 2); c.scale(sc, sc); c.translate(-(x + cw / 2), -(y + ch / 2));
-    c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = 30; c.fillStyle = 'rgba(255,255,255,.93)';
+    c.translate(W / 2, y + ch / 2); c.scale(sc, sc); c.translate(-W / 2, -(y + ch / 2));
+    c.shadowColor = 'rgba(0,0,0,.35)'; c.shadowBlur = 30; c.fillStyle = 'rgba(255,255,255,.95)';
     rr(c, x, y, cw, ch, 34); c.fill(); c.shadowBlur = 0;
-    const sx = x + 50, sy = y + 40, sw = cw - 100, sh = 780;
-    c.fillStyle = '#123b96'; c.fillRect(sx, sy, sw, sh);
-    c.fillStyle = '#fff'; c.fillRect(sx + 4, sy + 4, sw - 8, sh - 8);
-    c.fillStyle = '#123b96';
-    c.fillRect(sx + 4, sy + 4, sw * 0.09, sh - 8);
-    c.fillRect(sx + sw - 4 - sw * 0.09, sy + 4, sw * 0.09, sh - 8);
-    c.fillRect(sx + 4, sy + sh - 4 - sh * 0.22, sw - 8, sh * 0.22);
-    pictogram(c, sx + sw * 0.17, sy + sh * 0.27, sw * 0.66, tram);
+    const ix = x + 40, iy = y + 40;
+    if (img) c.drawImage(img, ix, iy, iw, ih);
+    if (req) {                                              // on-request stop: N/Ż in the blue band
+      c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.font = 'bold 120px Arial, Helvetica, sans-serif';
+      c.fillText('N/Ż', W / 2, iy + ih * (tram ? 0.865 : 0.84));
+    }
     c.fillStyle = '#111'; c.textAlign = 'center'; c.textBaseline = 'middle';
     let fs = 58; c.font = `500 ${fs}px Arial, Helvetica, sans-serif`;
-    while (c.measureText(name).width > cw - 60 && fs > 30) { fs -= 2; c.font = `500 ${fs}px Arial, Helvetica, sans-serif`; }
-    c.fillText(name, x + cw / 2, y + ch - 95);
+    while (c.measureText(name).width > cw - 50 && fs > 28) { fs -= 2; c.font = `500 ${fs}px Arial, Helvetica, sans-serif`; }
+    c.fillText(name, W / 2, y + ch - 80);
     c.restore();
   }
   function drawKm(c, pt, km) {
@@ -177,6 +178,7 @@
 #film canvas.out{width:100%;height:100%;display:block}
 #film .fc{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:560px}
 #film .st{color:#9aa3b2;font-size:13px;text-align:center;min-height:18px;max-width:560px}
+#film .fin{background:#141922;border:1px solid #2a3240;color:#e8ecf2;border-radius:10px;padding:8px 10px;font:inherit}
 #filmmap{position:fixed;left:-20000px;top:0;width:540px;height:960px}`;
     document.head.appendChild(s);
   }
@@ -197,6 +199,8 @@
       <div class="fc"><button class="chip on" data-s="sat">Satelita</button><button class="chip" data-s="map">Mapa</button>
         <span style="width:10px"></span>
         <button class="chip" data-v="slow">Wolno</button><button class="chip on" data-v="normal">Normalnie</button><button class="chip" data-v="fast">Szybko</button></div>
+      <div class="fc"><input id="fnum" class="fin" style="width:72px" aria-label="Numer na tablicy"><input id="ftxt" class="fin" style="flex:1;min-width:180px" aria-label="Napis na tablicy">
+        <button class="chip" id="fchg">Trasa zmieniona</button></div>
       <div class="fc"><button class="btn pri" id="fplay">▶ Odtwórz</button><button class="btn" id="frec">● Nagraj wideo</button><button class="btn" id="fx">Zamknij</button></div>`;
     document.body.appendChild(box);
     const md = document.createElement('div'); md.id = 'filmmap'; document.body.appendChild(md);
@@ -213,17 +217,22 @@
       if (run) return; ui.speed = b.dataset.v;
       box.querySelectorAll('[data-v]').forEach(x => x.classList.toggle('on', x === b));
     });
+    box.querySelector('#fchg').onclick = e => { if (run) return; ui.changed = !ui.changed; e.target.classList.toggle('on', ui.changed); };
     box.querySelector('#fplay').onclick = () => start(false);
     box.querySelector('#frec').onclick = () => start(true);
     try {
-      await loadLib();
+      await Promise.all([loadLib(), loadImg('tram', 'lib/sign_tram.png'), loadImg('bus', 'lib/sign_bus.png'),
+        (async () => { try { const f = new FontFace('Linia', 'url(lib/linia.ttf)'); await f.load(); document.fonts.add(f); } catch (e) {} })()]);
       const fn = opts.line.replace(/[^0-9A-Za-z_-]/g, '_');
       const geo = await (await fetch('geo/' + fn + '.json')).json();
       const g = geo[opts.dir + '/' + opts.vi];
       if (!g) { st('Brak przebiegu tej trasy w rozkładzie.'); return; }
       ui.G = prep(g);
     } catch (e) { st('Nie udało się wczytać mapy.'); return; }
-    ui.led = ledBitmap(`${opts.line}  ${opts.variant.stops[opts.variant.stops.length - 1]}`);
+    ui.num = opts.line; ui.text = ledText(opts.line, opts.variant.stops[opts.variant.stops.length - 1]);
+    box.querySelector('#fnum').value = ui.num; box.querySelector('#ftxt').value = ui.text;
+    box.querySelector('#fnum').oninput = e => { ui.num = e.target.value; };
+    box.querySelector('#ftxt').oninput = e => { ui.text = e.target.value; };
     makeMap();
     loop();
   }
@@ -261,8 +270,8 @@
     if (ui.map) { try { c.drawImage(ui.map.getCanvas(), 0, 0, W, H); } catch (e) {} }
     const S = ui.scene || {};
     if (S.head && ui.map) { const p = ui.map.project([S.head[1], S.head[0]]); drawKm(c, { x: p.x * 2, y: p.y * 2 }, S.km || 0); }
-    drawLED(c, ui.led, t);
-    if (S.sign) drawSign(c, S.sign.name, ui.opts.tram, Math.min(1, (t - S.sign.t0) / 0.25) * (S.sign.out ? Math.max(0, 1 - (t - S.sign.out) / 0.25) : 1));
+    drawLED(c, ui.num, ui.text, ui.changed, t);
+    if (S.sign) drawSign(c, S.sign.name, ui.opts.tram, S.sign.req, Math.min(1, (t - S.sign.t0) / 0.25) * (S.sign.out ? Math.max(0, 1 - (t - S.sign.out) / 0.25) : 1));
     c.font = '24px Arial, Helvetica, sans-serif'; c.fillStyle = 'rgba(255,255,255,.75)'; c.textAlign = 'right'; c.textBaseline = 'alphabetic';
     c.fillText(ATTR[ui.style], W - 20, H - 20);
     ui.raf = requestAnimationFrame(loop);
@@ -293,6 +302,8 @@
     const alive = () => ui && run && !run.stop;
     ui.status('Przygotowanie zapowiedzi…');
     const introBuf = (await decodeAll(ac, [o.intro]))[0];
+    let chgBuf = null;
+    if (ui.changed) { try { chgBuf = await ac.decodeAudioData(await (await fetch('lib/trasa_zmieniona.mp3')).arrayBuffer()); } catch (e) {} }
     const stopBufs = await decodeAll(ac, o.items.map(x => x.rec));
     let rec = null, chunks = [], mime = '';
     if (record) {
@@ -317,6 +328,7 @@
       await sleep(600);
       const t0 = now();
       await playBuf(aud, introBuf);
+      if (chgBuf) { await sleep(250); await playBuf(aud, chgBuf); }
       await sleep(Math.max(0, 2500 - (now() - t0) * 1000));
       // 2. fly in to the first stop
       let bear = bearing(G.pts[0], at(G, 250).p);
@@ -327,7 +339,7 @@
       // 3. stop by stop
       for (let i = 0; i < G.stops.length && !run.stop; i++) {
         const name = o.items[i] ? o.items[i].name : '';
-        ui.scene.sign = { name, t0: now() };
+        ui.scene.sign = { name, req: o.items[i] && o.items[i].req, t0: now() };
         const ts = now();
         await playBuf(aud, stopBufs[i]);
         await sleep(Math.max(0, 1300 - (now() - ts) * 1000) + 250);
@@ -373,5 +385,5 @@
     ui.md.remove(); ui.box.remove(); ui = null;
   }
 
-  window.Film = { open, close, _led: ledBitmap };
+  window.Film = { open, close, _ledText: ledText };
 })();
