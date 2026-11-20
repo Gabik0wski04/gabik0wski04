@@ -324,7 +324,7 @@
       await Promise.all([loadLib(), loadImg('tram', 'lib/sign_tram.png'), loadImg('bus', 'lib/sign_bus.png'),
         (async () => { try { const f = new FontFace('Linia', 'url(lib/linia.ttf)'); await f.load(); document.fonts.add(f); } catch (e) {} })()]);
       const fn = opts.line.replace(/[^0-9A-Za-z_-]/g, '_');
-      const geo = await (await fetch('geo/' + fn + '.json')).json();
+      const geo = await (await fetch('geo/' + fn + '.json', { cache: 'no-cache' })).json();
       const g = geo[opts.dir + '/' + opts.vi];
       if (!g) { st('Brak przebiegu tej trasy w rozkładzie.'); return; }
       ui.raw = g; ui.fixKey = opts.line + '|' + opts.dir + '/' + opts.vi;
