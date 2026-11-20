@@ -206,7 +206,7 @@ function lineView(name){
   $('#playall').onclick=()=>{const idx=items.map((x,i)=>x.rec?i:-1).filter(i=>i>=0);playQueue(idx,false)};
   $('#zip').onclick=dlZip;
   $('#filmbtn').onclick=async()=>{stop();
-    if(!window.Film){await new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='film.js';sc.onload=res;sc.onerror=rej;document.head.appendChild(sc)}).catch(()=>{})}
+    if(!window.Film){await new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='film.js?v='+Date.now();sc.onload=res;sc.onerror=rej;document.head.appendChild(sc)}).catch(()=>{})}
     if(!window.Film){toast('Nie udało się wczytać filmiku');return}
     Film.open({line:l.name,dir:d.dir,vi,variant:v,tram:l.type==='tram',intro:intro?{e:intro,t:'a'}:null,items:items.filter(x=>x.kind==='stop')})};
   markNow();
