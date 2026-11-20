@@ -26,6 +26,11 @@
   const ATTR = { sat: 'Zdjęcia: Esri, Maxar, Earthstar Geographics', map: '© OpenStreetMap · OpenFreeMap' };
 
   let ui = null, run = null;
+  // user's own name font (e.g. Museo Sans): picked from their computer, kept only in this browser
+  function idb() { return new Promise((res, rej) => { const r = indexedDB.open('film', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = rej; }); }
+  async function kvGet(k) { try { const db = await idb(); return await new Promise(r => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => r(q.result); q.onerror = () => r(null); }); } catch (e) { return null; } }
+  async function kvSet(k, v) { try { const db = await idb(); db.transaction('kv', 'readwrite').objectStore('kv').put(v, k); } catch (e) {} }
+  async function useNameFont(buf) { const f = new FontFace('Museo', buf); await f.load(); document.fonts.add(f); return true; }
   // destination text for the LED display; the LED font draws these characters as symbols
   function ledText(line, dest) {
     let t = dest;
@@ -241,7 +246,8 @@
         <span style="width:10px"></span>
         <button class="chip" data-v="slow">Wolno</button><button class="chip on" data-v="normal">Normalnie</button><button class="chip" data-v="fast">Szybko</button></div>
       <div class="fc"><input id="fnum" class="fin" style="width:72px" aria-label="Numer na tablicy"><input id="ftxt" class="fin" style="flex:1;min-width:180px" aria-label="Napis na tablicy">
-        <button class="chip" id="fchg">Trasa zmieniona</button></div>
+        <button class="chip" id="fchg">Trasa zmieniona</button>
+        <label class="chip" id="ffontl" style="cursor:pointer">Wczytaj czcionkę nazw<input type="file" id="ffont" accept=".otf,.ttf,.woff,.woff2" hidden></label></div>
       <div class="fc"><button class="btn pri" id="fplay">▶ Odtwórz</button><button class="btn" id="frec">● Nagraj wideo</button><button class="btn" id="fx">Zamknij</button></div>`;
     document.body.appendChild(box);
     const md = document.createElement('div'); md.id = 'filmmap'; document.body.appendChild(md);
@@ -258,6 +264,13 @@
       if (run) return; ui.speed = b.dataset.v;
       box.querySelectorAll('[data-v]').forEach(x => x.classList.toggle('on', x === b));
     });
+    box.querySelector('#ffont').onchange = async e => {
+      const f = e.target.files[0]; if (!f) return;
+      try { const buf = await f.arrayBuffer(); await useNameFont(buf); await kvSet('namefont', { name: f.name, buf });
+        box.querySelector('#ffontl').firstChild.textContent = 'Czcionka: ' + f.name; st('Czcionka wczytana i zapamiętana w tej przeglądarce.'); }
+      catch (err) { st('Nie udało się wczytać tej czcionki.'); }
+    };
+    kvGet('namefont').then(async v => { if (v && v.buf) { try { await useNameFont(v.buf); box.querySelector('#ffontl').firstChild.textContent = 'Czcionka: ' + v.name; } catch (e) {} } });
     box.querySelector('#fchg').onclick = e => { if (run) return; ui.changed = !ui.changed; e.target.classList.toggle('on', ui.changed); };
     box.querySelector('#fplay').onclick = () => start(false);
     box.querySelector('#frec').onclick = () => start(true);
