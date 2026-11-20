@@ -72,6 +72,37 @@
   // ---------- drawing ----------
   function rr(c, x, y, w, h, r) { c.beginPath(); c.roundRect(x, y, w, h, r); }
 
+  // negative line number on the dot matrix: every dot of the block lit except the digits' dots
+  // (the LED font has 24 dots per em: pitch = fs/24, dots centred ~0.45 / 0.55 pitch from the cell origin)
+  let negCache = null;
+  function negNumber(c, num, fs, nx, base, nw, y0, bh) {
+    const p = fs / 24, key = num + '|' + fs;
+    if (!negCache || negCache.key !== key) {
+      const cv = document.createElement('canvas'), w = Math.ceil(nw + 4 * p), h = Math.ceil(fs * 1.3);
+      cv.width = w; cv.height = h; const g = cv.getContext('2d');
+      g.font = `${fs}px Linia, monospace`; g.textBaseline = 'alphabetic'; g.fillStyle = '#fff';
+      const ox = 2 * p, ob = fs * 0.95; g.fillText(num, ox, ob);
+      const d = g.getImageData(0, 0, w, h).data, dots = [];
+      const top = ob - fs * 0.875;
+      for (let r = -2; r < 30; r++) {
+        const yy = top + (r + 0.55) * p; if (yy < 0 || yy >= h) continue;
+        for (let k = -2; ; k++) {
+          const xx = ox + (k + 0.45) * p; if (xx >= w) break; if (xx < 0) continue;
+          dots.push([xx - ox, yy - ob, d[(Math.round(yy) * w + Math.round(xx)) * 4 + 3] > 100]);
+        }
+      }
+      negCache = { key, dots };
+    }
+    const r = p * 0.36;
+    c.save(); c.beginPath(); c.rect(nx - 2 * p, y0 + 6, nw + 4 * p, bh - 12); c.clip();
+    c.fillStyle = '#2a1a05'; c.beginPath();
+    for (const [x, y, on] of negCache.dots) if (on) { c.moveTo(nx + x + r, base + y); c.arc(nx + x, base + y, r, 0, 7); }
+    c.fill();
+    c.shadowColor = '#ff9a1a'; c.shadowBlur = 10; c.fillStyle = '#ffb02e'; c.beginPath();
+    for (const [x, y, on] of negCache.dots) if (!on) { c.moveTo(nx + x + r, base + y); c.arc(nx + x, base + y, r, 0, 7); }
+    c.fill(); c.restore();
+  }
+
   // LED destination display in the user's LED font: line number fixed, direction text scrolls
   function drawLED(c, num, text, neg, t) {
     const y0 = 110, bh = 150, fs = 118, base = y0 + bh / 2 + fs * 0.33;
@@ -79,13 +110,8 @@
     c.save(); c.beginPath(); c.rect(0, y0, W, bh); c.clip();
     c.font = `${fs}px Linia, monospace`; c.textBaseline = 'alphabetic'; c.textAlign = 'left';
     const nw = c.measureText(num).width, nx = 24;
-    if (neg) {                                              // negative: lit block, dark digits
-      c.fillStyle = '#ffb02e'; c.shadowColor = '#ff9a1a'; c.shadowBlur = 14;
-      c.fillRect(nx - 12, y0 + 14, nw + 24, bh - 28); c.shadowBlur = 0;
-      c.fillStyle = '#050505'; c.fillText(num, nx, base);
-    } else {
-      c.shadowColor = '#ff9a1a'; c.shadowBlur = 12; c.fillStyle = '#ffb02e'; c.fillText(num, nx, base);
-    }
+    if (neg) negNumber(c, num, fs, nx, base, nw, y0, bh);
+    else { c.shadowColor = '#ff9a1a'; c.shadowBlur = 12; c.fillStyle = '#ffb02e'; c.fillText(num, nx, base); }
     const x0 = nx + nw + 48, avail = W - x0 - 16, tw = c.measureText(text).width;
     c.beginPath(); c.rect(x0, y0, W - x0, bh); c.clip();
     c.shadowColor = '#ff9a1a'; c.shadowBlur = 12; c.fillStyle = '#ffb02e';
@@ -400,5 +426,5 @@
     ui.md.remove(); ui.box.remove(); ui = null;
   }
 
-  window.Film = { open, close, _ledText: ledText, _drawSign: drawSign, _loadImg: loadImg };
+  window.Film = { open, close, _ledText: ledText, _drawSign: drawSign, _loadImg: loadImg, _drawLED: drawLED };
 })();
