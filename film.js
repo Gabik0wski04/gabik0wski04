@@ -163,12 +163,13 @@
     }
     return { fs: 30, lines: [text] };
   }
-  function drawSign(c, name, tram, req, k) {
+  function drawSign(c, name, tram, req, k, zone) {
     if (k <= 0) return;
     const img = IMG[tram ? 'tram' : 'bus'];
     const iw = 560, ih = img ? iw * img.height / img.width : 700;
     const L = nameLayout(c, name + (req ? '\u00a0\u00a0N/Ż' : ''), iw + 30);
-    const cw = iw + 80, ch = ih + 160 + (L.lines.length - 1) * L.fs * 1.15, x = (W - cw) / 2, y = (H - ch) / 2 - 60;
+    const zfs = 40, zh = zone ? zfs * 1.4 : 0;                      // "(Granica Strefy Biletowej)" under the name
+    const cw = iw + 80, ch = ih + 160 + (L.lines.length - 1) * L.fs * 1.15 + zh, x = (W - cw) / 2, y = (H - ch) / 2 - 60;
     c.save();
     c.globalAlpha = Math.min(1, k * 1.4);
     const sc = 0.85 + 0.15 * ease(Math.min(1, k));
@@ -184,8 +185,9 @@
     }
     c.fillStyle = '#111'; c.textAlign = 'center'; c.textBaseline = 'middle';
     c.font = `500 ${L.fs}px ${NAMEFONT}`;
-    const lh = L.fs * 1.15, mid = (iy + ih + y + ch) / 2;           // centre of the white area under the sign
+    const lh = L.fs * 1.15, mid = (iy + ih + y + ch) / 2 - zh / 2;  // centre of the white area under the sign
     L.lines.forEach((ln, i) => c.fillText(ln, W / 2, mid + (i - (L.lines.length - 1) / 2) * lh));
+    if (zone) { c.font = `500 ${zfs}px ${NAMEFONT}`; c.fillStyle = '#444'; c.fillText('(Granica Strefy Biletowej)', W / 2, mid + (L.lines.length - 1) / 2 * lh + L.fs * 0.55 + zfs * 0.75); }
     c.restore();
   }
   function drawKm(c, pt, km) {
@@ -326,7 +328,7 @@
     const S = ui.scene || {};
     if (S.head && ui.map) { const p = ui.map.project([S.head[1], S.head[0]]); drawKm(c, { x: p.x * 2, y: p.y * 2 }, S.km || 0); }
     drawLED(c, ui.num, ui.text, ui.changed, t);
-    if (S.sign) drawSign(c, S.sign.name, ui.opts.tram, S.sign.req, Math.min(1, (t - S.sign.t0) / 0.25) * (S.sign.out ? Math.max(0, 1 - (t - S.sign.out) / 0.25) : 1));
+    if (S.sign) drawSign(c, S.sign.name, ui.opts.tram, S.sign.req, Math.min(1, (t - S.sign.t0) / 0.25) * (S.sign.out ? Math.max(0, 1 - (t - S.sign.out) / 0.25) : 1), S.sign.zone);
     c.font = '24px Arial, Helvetica, sans-serif'; c.fillStyle = 'rgba(255,255,255,.75)'; c.textAlign = 'right'; c.textBaseline = 'alphabetic';
     c.fillText(ATTR[ui.style], W - 20, H - 20);
     ui.raf = requestAnimationFrame(loop);
@@ -395,7 +397,7 @@
       // 3. stop by stop
       for (let i = 0; i < G.stops.length && !run.stop; i++) {
         const name = o.items[i] ? o.items[i].name : '';
-        ui.scene.sign = { name, req: o.items[i] && o.items[i].req, t0: now() };
+        ui.scene.sign = { name, req: o.items[i] && o.items[i].req, zone: !!(o.items[i] && o.items[i].zone), t0: now() };
         const ts = now();
         await playBuf(aud, stopBufs[i]);
         if (zoneBufs[i]) { await sleep(300); await playBuf(aud, zoneBufs[i]); }   // last stop in this ticket zone

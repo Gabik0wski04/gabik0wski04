@@ -180,8 +180,9 @@ function lineView(name){
   const intro=term!==d.head?DATA.intros[name+'@'+term]:DATA.intros[name+'|'+d.dir];
   const items=[];
   if(intro) items.push({kind:'intro',term,name:`Linia ${l.name}, kierunek ${term}`,rec:{e:intro,t:'a'}});
-  v.stops.forEach((s,i)=>{items.push({kind:'stop',idx:i+1,name:s,req:v.req[i],rec:recFor(s,v.req[i])});
+  v.stops.forEach((s,i)=>{
     const z=v.zone&&v.zone[i], zn=v.zone&&v.zone[i+1];
+    items.push({kind:'stop',idx:i+1,name:s,req:v.req[i],rec:recFor(s,v.req[i]),border:!!(z&&zn&&z!==zn)});
     if(z&&zn&&z!==zn&&ZONE[z]) items.push({kind:'zone',idx:String(i+1).padStart(2,'0')+'a',name:ZONE[z].name,rec:{f:ZONE[z].f}});  // leaving zone z
   });
   current={line:l,dir:d,items};
@@ -200,7 +201,7 @@ function lineView(name){
   <div class="list">${items.map((it,i)=>`
     <div class="row ${it.rec?'has':''} ${it.kind==='intro'?'intro':''}" data-i="${i}">
       <div class="n">${it.kind==='stop'?it.idx:''}</div><div class="track"></div>
-      <div class="nm"><b>${esc(it.name)}</b><div class="tags">${it.kind==='intro'?'<span class="tag">zapowiedź linii</span>':''}${it.kind==='zone'?'<span class="tag">strefa biletowa</span>':''}${it.req?'<span class="tag nz">na żądanie</span>':''}${!it.rec?'<span class="tag">brak nagrania</span>':''}</div></div>
+      <div class="nm"><b>${esc(it.name)}</b><div class="tags">${it.kind==='intro'?'<span class="tag">zapowiedź linii</span>':''}${it.kind==='zone'?'<span class="tag">strefa biletowa</span>':''}${it.req?'<span class="tag nz">na żądanie</span>':''}${it.border?'<span class="tag">Granica Strefy Biletowej</span>':''}${!it.rec?'<span class="tag">brak nagrania</span>':''}</div></div>
       <button class="ib play" data-p="${i}" ${it.rec?'':'disabled'} aria-label="Odtwórz">${I.play}</button>
       ${true?`<button class="ib" data-dl="${i}" ${it.rec?'':'disabled'} aria-label="Pobierz">${I.dl}</button>`:''}
     </div>`).join('')}</div>
