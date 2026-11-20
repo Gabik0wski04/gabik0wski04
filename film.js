@@ -118,11 +118,26 @@
   const IMG = {};
   const NAMEFONT = 'Museo, "Museo Sans", Arial, Helvetica, sans-serif';
   function loadImg(k, src) { return new Promise(r => { const i = new Image(); i.onload = () => { IMG[k] = i; r(); }; i.onerror = r; i.src = src; }); }
+  // stop name: one line at full size, else the best split into two lines, shrinking only if still too wide
+  function nameLayout(c, text, maxW) {
+    const fit = (fs, lines) => { c.font = `500 ${fs}px ${NAMEFONT}`; return Math.max(...lines.map(l => c.measureText(l).width)) <= maxW; };
+    const words = text.split(' ');
+    const splits = [];
+    for (let i = 1; i < words.length; i++) splits.push([words.slice(0, i).join(' '), words.slice(i).join(' ')]);
+    for (let fs = 60; fs >= 30; fs -= 2) {
+      if (fit(fs, [text])) return { fs, lines: [text] };
+      let best = null, bw = 1e9;
+      for (const sp of splits) { c.font = `500 ${fs}px ${NAMEFONT}`; const w = Math.max(...sp.map(l => c.measureText(l).width)); if (w < bw) { bw = w; best = sp; } }
+      if (best && bw <= maxW) return { fs, lines: best };
+    }
+    return { fs: 30, lines: [text] };
+  }
   function drawSign(c, name, tram, req, k) {
     if (k <= 0) return;
     const img = IMG[tram ? 'tram' : 'bus'];
     const iw = 560, ih = img ? iw * img.height / img.width : 700;
-    const cw = iw + 80, ch = ih + 200, x = (W - cw) / 2, y = (H - ch) / 2 - 60;
+    const L = nameLayout(c, name + (req ? '\u00a0\u00a0N/Ż' : ''), iw + 30);
+    const cw = iw + 80, ch = ih + 160 + (L.lines.length - 1) * L.fs * 1.15, x = (W - cw) / 2, y = (H - ch) / 2 - 60;
     c.save();
     c.globalAlpha = Math.min(1, k * 1.4);
     const sc = 0.85 + 0.15 * ease(Math.min(1, k));
@@ -136,11 +151,9 @@
       c.font = `700 62px ${NAMEFONT}`;
       c.fillText('NA ŻĄDANIE', W / 2, iy + ih * (tram ? 0.865 : 0.84));
     }
-    const label = name + (req ? '  N/Ż' : '');
     c.fillStyle = '#111'; c.textAlign = 'center'; c.textBaseline = 'middle';
-    let fs = 60; c.font = `500 ${fs}px ${NAMEFONT}`;
-    while (c.measureText(label).width > cw - 50 && fs > 28) { fs -= 2; c.font = `500 ${fs}px ${NAMEFONT}`; }
-    c.fillText(label, W / 2, y + ch - 80);
+    c.font = `500 ${L.fs}px ${NAMEFONT}`;
+    L.lines.forEach((ln, i) => c.fillText(ln, W / 2, y + ih + 40 + 80 + i * L.fs * 1.15));
     c.restore();
   }
   function drawKm(c, pt, km) {
@@ -387,5 +400,5 @@
     ui.md.remove(); ui.box.remove(); ui = null;
   }
 
-  window.Film = { open, close, _ledText: ledText };
+  window.Film = { open, close, _ledText: ledText, _drawSign: drawSign, _loadImg: loadImg };
 })();
