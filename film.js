@@ -389,59 +389,153 @@
       canvasContextAttributes: { preserveDrawingBuffer: true, antialias: true },
       bounds: b, fitBoundsOptions: { padding: { top: 380, bottom: 120, left: 60, right: 60 } }
     });
-    ui.map = m; ui.ready = false;
+    ui.map = m; ui.ready = false; ui.lastD = null;
+    // share of the line's length (as the map measures it) at every route point, for the growing red line
+    { const f = [0]; for (let i = 1; i < G.pts.length; i++) { const a = G.pts[i - 1], b = G.pts[i];
+        f.push(f[i - 1] + hav(a, b) / Math.cos((a[0] + b[0]) / 2 * rad)); }
+      const tot = f[f.length - 1] || 1; ui.frac = f.map(x => x / tot); }
     m.on('load', () => {
-      m.addSource('route', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } } });
+      m.addSource('route', { type: 'geojson', lineMetrics: true, data: { type: 'Feature', geometry: { type: 'LineString', coordinates: G.pts.map(p => [p[1], p[0]]) } } });
       m.addSource('full', { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: G.pts.map(p => [p[1], p[0]]) } } });
       m.addSource('stops', { type: 'geojson', data: { type: 'FeatureCollection', features: G.stops.map(s => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [s[1], s[0]] } })) } });
       m.addLayer({ id: 'full', type: 'line', source: 'full', paint: { 'line-color': '#ffffff', 'line-opacity': 0.35, 'line-width': 3, 'line-dasharray': [2, 2] } });
-      m.addLayer({ id: 'route-c', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#5a0000', 'line-width': 10 } });
-      m.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ee1c25', 'line-width': 6 } });
+      m.addLayer({ id: 'route-c', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-width': 10, 'line-gradient': grad('#5a0000', 0) } });
+      m.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-width': 6, 'line-gradient': grad('#ee1c25', 0) } });
       m.addLayer({ id: 'stops', type: 'circle', source: 'stops', paint: { 'circle-radius': 5, 'circle-color': '#fff', 'circle-stroke-color': '#123b96', 'circle-stroke-width': 2.5 } });
       ui.ready = true; ui.status('Gotowe. Wybierz mapę i prędkość, potem Odtwórz albo Nagraj wideo.');
     });
     m.on('error', () => {});
   }
 
-  // one frame of the composite: map + overlays
-  function loop() {
-    if (!ui) return;
-    const c = ui.ctx, t = performance.now() / 1000;
+  // one frame of the composite: map + overlays. t = film time (seconds) while a film runs, else wall time
+  function compose(t) {
+    const c = ui.ctx;
     c.fillStyle = '#10151d'; c.fillRect(0, 0, W, H);
     if (ui.map) { try { c.drawImage(ui.map.getCanvas(), 0, 0, W, H); } catch (e) {} }
     const S = ui.scene || {};
     if (S.head && ui.map) { const p = ui.map.project([S.head[1], S.head[0]]); drawKm(c, { x: p.x * 2, y: p.y * 2 }, S.km || 0); }
     drawLED(c, ui.num, ui.text, ui.changed, t);
-    if (S.sign) drawSign(c, S.sign.name, ui.opts.tram, S.sign.req, Math.min(1, (t - S.sign.t0) / 0.25) * (S.sign.out ? Math.max(0, 1 - (t - S.sign.out) / 0.25) : 1), S.sign.zone);
+    if (S.sign) drawSign(c, S.sign.name, ui.opts.tram, S.sign.req, Math.min(1, (t - S.sign.t0) / 0.25) * Math.max(0, Math.min(1, 1 - (t - S.sign.out) / 0.25)), S.sign.zone);
     c.font = '24px Arial, Helvetica, sans-serif'; c.fillStyle = 'rgba(255,255,255,.75)'; c.textAlign = 'right'; c.textBaseline = 'alphabetic';
     c.fillText(ATTR[ui.style], W - 20, H - 20);
+  }
+  function loop() {
+    if (!ui) return;
+    if (!ui.offline) {                      // while an offline render runs it draws the frames itself
+      let t = performance.now() / 1000;
+      if (run && run.live) { t = run.aud.ac.currentTime - run.base; applyState(run.plan, t); }
+      compose(t);
+    }
     ui.raf = requestAnimationFrame(loop);
   }
 
+  // the red line grows by moving a colour step along the whole route (no geometry update, so it is instant)
+  function grad(col, p) { return ['step', ['line-progress'], col, Math.max(1e-6, Math.min(1, p)), 'rgba(0,0,0,0)']; }
   function setRoute(d) {
-    const src = ui.map.getSource('route');
-    if (src) src.setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: travelled(ui.G, d) } });
-  }
-  function camAt(d, zoom, bear) {
-    const G = ui.G, p = at(G, d).p;
-    const a = at(G, Math.max(0, d - 60)).p, b = at(G, Math.min(G.len, d + 220)).p;
-    let target = hav(a, b) > 5 ? bearing(a, b) : bear;
-    const nb = bear + angDiff(bear, target) * 0.08;
-    ui.map.jumpTo({ center: [p[1], p[0]], zoom, pitch: 55, bearing: nb });
-    return { p, bear: nb };
+    if (ui.lastD === d) return; ui.lastD = d;
+    const G = ui.G, e = at(G, d), i = e.i, seg = (G.cum[i + 1] - G.cum[i]) || 1;
+    const fr = ui.frac, p = fr[i] + ((fr[i + 1] !== undefined ? fr[i + 1] : fr[i]) - fr[i]) * Math.min(1, (d - G.cum[i]) / seg);
+    const m = ui.map; if (!m.getLayer('route')) return;
+    m.setPaintProperty('route', 'line-gradient', grad('#ee1c25', d >= G.len ? 1 : p));
+    m.setPaintProperty('route-c', 'line-gradient', grad('#5a0000', d >= G.len ? 1 : p));
   }
   function moveEnd(m) { return new Promise(r => m.once('moveend', r)); }
 
-  async function start(record) {
-    if (run || !ui || !ui.ready) return;
-    const o = ui.opts, G = ui.G, m = ui.map;
+  // ---------- the film as a fixed timeline: every frame and every announcement has an exact time ----------
+  const PAD = { top: 380, bottom: 120, left: 60, right: 60 };
+  function makePlan(G, introDur, chgDur, stopDurs, zoneDurs, speed) {
+    const segs = [], audio = [], signs = [];
+    let t = 0.6;
+    audio.push({ t, k: 'intro' });
+    let ovEnd = t + introDur;
+    if (chgDur) { audio.push({ t: ovEnd + 0.25, k: 'chg' }); ovEnd += 0.25 + chgDur; }
+    ovEnd = Math.max(ovEnd, 0.6 + 2.5);
+    segs.push({ k: 'ov', t0: 0, t1: ovEnd });
+    segs.push({ k: 'fly', t0: ovEnd, t1: ovEnd + 2.8 });
+    t = ovEnd + 2.8;
+    const n = G.stops.length;
+    for (let i = 0; i < n; i++) {
+      const a = stopDurs[i] || 0, z = zoneDurs[i] || 0;
+      audio.push({ t, k: 's' + i });
+      if (z) audio.push({ t: t + a + 0.3, k: 'z' + i });
+      const hold = Math.max(1.3, a + (z ? 0.3 + z : 0)) + 0.25;
+      signs.push({ i, t0: t, out: t + hold });
+      segs.push({ k: 'stop', i, t0: t, t1: t + hold });
+      t += hold;
+      if (i === n - 1) break;
+      const d0 = G.stops[i][2], d1 = Math.max(d0, G.stops[i + 1][2]), L = d1 - d0;
+      const dur = Math.max(1.4, L / speed), zoom = L > 2500 ? 14.6 : L > 1200 ? 15.3 : 16;
+      segs.push({ k: 'trav', i, t0: t, t1: t + dur, d0, L, zoom });
+      t += dur;
+    }
+    segs.push({ k: 'tail', t0: t, t1: t + 0.9 }); t += 0.9;
+    segs.push({ k: 'back', t0: t, t1: t + 2.5 }); t += 2.5;
+    segs.push({ k: 'end', t0: t, t1: t + 1.5 }); t += 1.5;
+    const P = { segs, audio, signs, T: t, G };
+    // camera bearing, simulated frame by frame so that preview and recording are identical
+    const N = Math.ceil(t * FPS) + 2, bears = new Float32Array(N);
+    let bear = bearing(G.pts[0], at(G, 250).p); P.bear0 = bear;
+    for (let f = 0; f < N; f++) {
+      const sg = segAt(P, f / FPS);
+      if (sg.k === 'trav') {
+        const u = Math.min(1, (f / FPS - sg.t0) / (sg.t1 - sg.t0)), d = sg.d0 + sg.L * ease(u);
+        const a = at(G, Math.max(0, d - 60)).p, b = at(G, Math.min(G.len, d + 220)).p;
+        if (hav(a, b) > 5) bear += angDiff(bear, bearing(a, b)) * 0.15;
+      }
+      bears[f] = bear;
+    }
+    P.bears = bears;
+    return P;
+  }
+  function segAt(P, t) {
+    const S = P.segs;
+    let lo = 0, hi = S.length - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (S[m].t0 <= t) lo = m; else hi = m - 1; }
+    return S[lo];
+  }
+  function lerp(a, b, u) { return a + (b - a) * u; }
+  function stateAt(P, t) {
+    const G = P.G, sg = segAt(P, Math.max(0, Math.min(P.T, t)));
+    const bear = P.bears[Math.max(0, Math.min(P.bears.length - 1, Math.round(t * FPS)))];
+    const u = Math.max(0, Math.min(1, (t - sg.t0) / ((sg.t1 - sg.t0) || 1)));
+    const ov = P.cam0, last = G.stops[G.stops.length - 1];
+    const camAtD = (d, zoom, b) => { const p = at(G, d).p; return { center: [p[1], p[0]], zoom, pitch: 55, bearing: b }; };
+    let cam, d = 0, head = null;
+    if (sg.k === 'ov') cam = ov;
+    else if (sg.k === 'fly') {
+      const e = ease(u), p = at(G, G.stops[0][2]).p;
+      cam = { center: [lerp(ov.center[0], p[1], e), lerp(ov.center[1], p[0], e)], zoom: lerp(ov.zoom, 16, e), pitch: 55 * e, bearing: P.bear0 * e };
+    } else if (sg.k === 'stop') { d = G.stops[sg.i][2]; cam = camAtD(d, 16, bear); head = at(G, d).p; }
+    else if (sg.k === 'trav') {
+      d = sg.d0 + sg.L * ease(u);
+      const zz = 16 + (sg.zoom - 16) * Math.min(1, u * 3) + (u > 0.7 ? (16 - sg.zoom) * (u - 0.7) / 0.3 : 0);
+      cam = camAtD(d, zz, bear); head = at(G, d).p;
+    } else if (sg.k === 'tail') { d = last[2]; cam = camAtD(d, 16, bear); }
+    else if (sg.k === 'back') {
+      d = last[2]; const e = ease(u), p = at(G, d).p, b0 = P.bears[Math.round(sg.t0 * FPS)] || 0;
+      cam = { center: [lerp(p[1], ov.center[0], e), lerp(p[0], ov.center[1], e)], zoom: lerp(16, ov.zoom, e), pitch: 55 * (1 - e), bearing: b0 + angDiff(b0, 0) * e };
+    } else { d = last[2]; cam = ov; }
+    let sign = null;
+    for (const s of P.signs) if (s.t0 <= t && t < s.out + 0.3) sign = s;
+    return { cam, d, head, km: d / 1000, sign };
+  }
+  function applyState(P, t) {
+    const st = stateAt(P, t), m = ui.map;
+    m.jumpTo(st.cam);
+    setRoute(st.d);
+    const it = st.sign && P.items[st.sign.i];
+    ui.scene = { head: st.head, km: st.km,
+      sign: st.sign ? { name: it ? it.name : '', req: it && it.req, zone: !!(it && it.zone), t0: st.sign.t0, out: st.sign.out } : null };
+  }
+  function waitRendered(m) {
+    return new Promise(r => {
+      let done = false; const f = () => { if (!done) { done = true; r(); } };
+      m.once('idle', f); m.triggerRepaint(); setTimeout(f, 5000);
+    });
+  }
+
+  async function prepare(o) {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
-    await ac.resume();
-    const gain = ac.createGain(); gain.connect(ac.destination);
-    const aud = { ac, gain, sources: [] };
-    run = { stop: false, aud };
-    const alive = () => ui && run && !run.stop;
-    ui.status('Przygotowanie zapowiedzi…');
     const introBuf = (await decodeAll(ac, [o.intro]))[0];
     let chgBuf = null;
     if (ui.changed) { try { chgBuf = await ac.decodeAudioData(await (await fetch('lib/trasa_zmieniona.mp3')).arrayBuffer()); } catch (e) {} }
@@ -452,77 +546,137 @@
       }); }
     const stopBufs = await decodeAll(ac, items.map(x => x.rec));
     const zoneBufs = await decodeAll(ac, items.map(x => x.zone || null));
+    const P = makePlan(ui.G, introBuf ? introBuf.duration : 0, chgBuf ? chgBuf.duration : 0,
+      stopBufs.map(b => b ? b.duration : 0), zoneBufs.map(b => b ? b.duration : 0), SPEEDS[ui.speed]);
+    P.items = items;
+    const cam = ui.map.cameraForBounds(ui.bounds, { padding: PAD });
+    P.cam0 = { center: [cam.center.lng, cam.center.lat], zoom: cam.zoom, pitch: 0, bearing: 0 };
+    const buf = k => k === 'intro' ? introBuf : k === 'chg' ? chgBuf : k[0] === 's' ? stopBufs[+k.slice(1)] : zoneBufs[+k.slice(1)];
+    P.audio.forEach(a => a.buf = buf(a.k));
+    return { ac, P };
+  }
+
+  async function start(record) {
+    if (run || !ui || !ui.ready) return;
+    const o = ui.opts;
+    ui.status('Przygotowanie zapowiedzi…');
+    run = { stop: false };
+    let prep;
+    try { prep = await prepare(o); } catch (e) { console.error(e); ui.status('Nie udało się przygotować filmiku.'); run = null; return; }
+    const { ac, P } = prep;
+    if (record && window.VideoEncoder && window.AudioEncoder && window.OfflineAudioContext && window.Mp4Muxer !== false) {
+      try { await renderOffline(P, o); } catch (e) { console.error(e); ui && ui.status('Nie udało się zapisać wideo: ' + (e && e.message || e)); }
+      ac.close(); run = null; if (ui) { ui.offline = false; ui.scene = {}; }
+      return;
+    }
+    // live: audio clock drives the picture, so sound and image cannot drift apart
+    await ac.resume();
+    const gain = ac.createGain(); gain.connect(ac.destination);
+    run.aud = { ac, gain, sources: [] };
     let rec = null, chunks = [], mime = '';
-    if (record) {
+    if (record) {   // fallback for browsers without WebCodecs: record the live playback
       const dest = ac.createMediaStreamDestination(); gain.connect(dest);
       const vs = ui.out.captureStream(FPS);
       const stream = new MediaStream([...vs.getVideoTracks(), ...dest.stream.getAudioTracks()]);
       for (const t of ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'])
         if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) { mime = t; break; }
-      if (!mime) { ui.status('Ta przeglądarka nie umie nagrywać wideo.'); run = null; return; }
+      if (!mime) { ui.status('Ta przeglądarka nie umie nagrywać wideo.'); ac.close(); run = null; return; }
       rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8e6 });
       rec.ondataavailable = e => e.data.size && chunks.push(e.data);
       rec.start(1000);
     }
-    const now = () => performance.now() / 1000;
-    const speed = SPEEDS[ui.speed];
-    ui.scene = {};
+    run.base = ac.currentTime + 0.15; run.plan = P;
+    for (const a of P.audio) if (a.buf) {
+      const s = ac.createBufferSource(); s.buffer = a.buf; s.connect(gain); s.start(run.base + a.t); run.aud.sources.push(s);
+    }
+    run.live = true;
     ui.status(record ? 'Nagrywanie… nie przełączaj karty.' : 'Odtwarzanie…');
-    try {
-      // 1. overview with the line announcement
-      m.fitBounds(ui.bounds, { padding: { top: 380, bottom: 120, left: 60, right: 60 }, pitch: 0, bearing: 0, duration: 0 });
-      setRoute(0);
-      await sleep(600);
-      const t0 = now();
-      await playBuf(aud, introBuf);
-      if (chgBuf) { await sleep(250); await playBuf(aud, chgBuf); }
-      await sleep(Math.max(0, 2500 - (now() - t0) * 1000));
-      // 2. fly in to the first stop
-      let bear = bearing(G.pts[0], at(G, 250).p);
-      const s0 = G.stops[0];
-      m.flyTo({ center: [s0[1], s0[0]], zoom: 16, pitch: 55, bearing: bear, duration: 2800, essential: true });
-      await moveEnd(m);
-      ui.scene.head = [s0[0], s0[1]]; ui.scene.km = 0;
-      // 3. stop by stop
-      for (let i = 0; i < G.stops.length && !run.stop; i++) {
-        const name = items[i] ? items[i].name : '';
-        ui.scene.sign = { name, req: items[i] && items[i].req, zone: !!(items[i] && items[i].zone), t0: now() };
-        const ts = now();
-        await playBuf(aud, stopBufs[i]);
-        if (zoneBufs[i]) { await sleep(300); await playBuf(aud, zoneBufs[i]); }   // last stop in this ticket zone
-        await sleep(Math.max(0, 1300 - (now() - ts) * 1000) + 250);
-        ui.scene.sign.out = now();
-        if (i === G.stops.length - 1) break;
-        const d0 = G.stops[i][2], d1 = Math.max(d0, G.stops[i + 1][2]), L = d1 - d0;
-        const dur = Math.max(1.4, L / speed), zoom = L > 2500 ? 14.6 : L > 1200 ? 15.3 : 16;
-        const z0 = m.getZoom(), tm = now();
-        await new Promise(res => {
-          const step = () => {
-            if (!ui || run.stop) return res();
-            const u = Math.min(1, (now() - tm) / dur), d = d0 + L * ease(u);
-            const zz = z0 + (zoom - z0) * Math.min(1, u * 3) + (u > 0.7 ? (16 - zoom) * (u - 0.7) / 0.3 : 0);
-            const r = camAt(d, zz, bear); bear = r.bear;
-            setRoute(d); ui.scene.head = r.p; ui.scene.km = d / 1000;
-            if (ui.scene.sign && now() - ui.scene.sign.out > 0.3) ui.scene.sign = null;
-            u < 1 ? requestAnimationFrame(step) : res();
-          };
-          step();
-        });
-      }
-      // 4. finish: zoom back out over the whole route
-      await sleep(900); ui.scene.sign = null; ui.scene.head = null;
-      if (!run.stop) { m.fitBounds(ui.bounds, { padding: { top: 380, bottom: 120, left: 60, right: 60 }, pitch: 0, bearing: 0, duration: 2500 }); await moveEnd(m); await sleep(1500); }
-    } catch (e) { console.error(e); }
-    aud.sources.forEach(s => { try { s.stop(); } catch (e) {} });
+    while (ui && run && !run.stop && ac.currentTime - run.base < P.T) await sleep(100);
+    if (run) run.live = false;
+    if (run && run.aud) run.aud.sources.forEach(s => { try { s.stop(); } catch (e) {} });
     if (rec) {
       const done = new Promise(r => rec.onstop = r); rec.stop(); await done;
       const ext = mime.includes('mp4') ? 'mp4' : 'webm';
       const blob = new Blob(chunks, { type: mime.split(';')[0] });
-      const fname = safe(`Linia ${o.line} - ${o.variant.stops[o.variant.stops.length - 1]}`) + '.' + ext;
-      await saveFile(fname, blob);
-      ui && ui.status(ext === 'mp4' ? 'Gotowe – wideo MP4 zapisane.' : 'Gotowe – zapisano jako WebM (ta przeglądarka nie nagrywa MP4).');
+      await saveFile(safe(`Linia ${o.line} - ${o.variant.stops[o.variant.stops.length - 1]}`) + '.' + ext, blob);
+      ui && ui.status('Gotowe – wideo zapisane.');
     } else ui && ui.status('Koniec. Możesz odtworzyć jeszcze raz albo nagrać wideo.');
-    ac.close(); run = null; if (ui) ui.scene = {};
+    ac.close(); run = null; if (ui) { ui.scene = {}; ui.lastD = null; }
+  }
+
+  async function loadMuxer() {
+    if (window.Mp4Muxer) return;
+    await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'lib/mp4-muxer.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+  }
+
+  // offline render: frame by frame (as fast as the computer can), audio mixed exactly at its times, saved as MP4
+  async function renderOffline(P, o) {
+    await loadMuxer();
+    const SR = 48000;
+    // audio codec: AAC where the browser has it, else Opus (both fine in MP4)
+    let acodec = null;
+    for (const [c, mc] of [['mp4a.40.2', 'aac'], ['opus', 'opus']]) {
+      try { const r = await AudioEncoder.isConfigSupported({ codec: c, sampleRate: SR, numberOfChannels: 1, bitrate: 128000 }); if (r.supported) { acodec = [c, mc]; break; } } catch (e) {}
+    }
+    let vcfg = null;
+    for (const c of ['avc1.640028', 'avc1.4d0028', 'avc1.420028']) {
+      for (const hw of ['prefer-hardware', 'no-preference']) {
+        const cfg = { codec: c, width: W, height: H, bitrate: 8e6, framerate: FPS, hardwareAcceleration: hw, avc: { format: 'avc' } };
+        try { const r = await VideoEncoder.isConfigSupported(cfg); if (r.supported) { vcfg = cfg; break; } } catch (e) {}
+      }
+      if (vcfg) break;
+    }
+    if (!vcfg) throw new Error('przeglądarka nie ma kodera H.264');
+    const muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(), fastStart: 'in-memory', firstTimestampBehavior: 'offset',
+      video: { codec: 'avc', width: W, height: H, frameRate: FPS },
+      audio: acodec ? { codec: acodec[1], sampleRate: SR, numberOfChannels: 1 } : undefined
+    });
+    let err = null;
+    const venc = new VideoEncoder({ output: (ch, meta) => muxer.addVideoChunk(ch, meta), error: e => err = e });
+    venc.configure(vcfg);
+    // audio: mix everything on an offline context, then encode
+    if (acodec) {
+      ui.status('Miksowanie dźwięku…');
+      const len = Math.ceil(P.T * SR), oc = new OfflineAudioContext(1, len, SR);
+      for (const a of P.audio) if (a.buf) { const s = oc.createBufferSource(); s.buffer = a.buf; s.connect(oc.destination); s.start(a.t); }
+      const mix = await oc.startRendering(), data = mix.getChannelData(0);
+      const aenc = new AudioEncoder({ output: (ch, meta) => muxer.addAudioChunk(ch, meta), error: e => err = e });
+      aenc.configure({ codec: acodec[0], sampleRate: SR, numberOfChannels: 1, bitrate: 128000 });
+      const CH = 4800;
+      for (let i = 0; i < len; i += CH) {
+        const part = data.slice(i, Math.min(len, i + CH));
+        const ad = new AudioData({ format: 'f32-planar', sampleRate: SR, numberOfFrames: part.length, numberOfChannels: 1, timestamp: Math.round(i / SR * 1e6), data: part });
+        aenc.encode(ad); ad.close();
+      }
+      await aenc.flush(); aenc.close();
+    }
+    // video: step the timeline one frame at a time and wait until the map has drawn it
+    ui.offline = true;
+    const m = ui.map, N = Math.ceil(P.T * FPS), t0 = performance.now();
+    for (let f = 0; f < N; f++) {
+      if (!ui || run.stop) throw new Error('przerwano');
+      if (err) throw err;
+      const t = f / FPS;
+      applyState(P, t);
+      m.redraw();                                   // draw this frame now; wait only if map tiles are still loading
+      if (!m.areTilesLoaded()) { await waitRendered(m); m.redraw(); }
+      compose(t);
+      const vf = new VideoFrame(ui.out, { timestamp: Math.round(t * 1e6), duration: Math.round(1e6 / FPS) });
+      venc.encode(vf, { keyFrame: f % (FPS * 2) === 0 }); vf.close();
+      while (venc.encodeQueueSize > 4) await new Promise(r => venc.addEventListener('dequeue', r, { once: true }));
+      if (f % 15 === 0) {
+        const el = (performance.now() - t0) / 1000, left = f ? el / f * (N - f) : 0;
+        ui.status(`Renderowanie wideo… ${Math.round(f / N * 100)}% (zostało ok. ${Math.ceil(left)} s). Nie przełączaj karty.`);
+      }
+    }
+    await venc.flush(); venc.close();
+    if (err) throw err;
+    muxer.finalize();
+    const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+    ui.offline = false;
+    await saveFile(safe(`Linia ${o.line} - ${o.variant.stops[o.variant.stops.length - 1]}`) + '.mp4', blob);
+    ui.status(`Gotowe – wideo MP4 zapisane (${Math.round((performance.now() - t0) / 1000)} s renderowania).`);
   }
 
   // route editor: pick a segment between two stops, click the real path on the map, save
@@ -631,7 +785,7 @@
 
   function close() {
     const fe = document.getElementById('fed'); if (fe) fe.remove();
-    if (run) { run.stop = true; run.aud.sources.forEach(x => { try { x.stop(); } catch (e) {} }); }
+    if (run) { run.stop = true; run.live = false; if (run.aud) run.aud.sources.forEach(x => { try { x.stop(); } catch (e) {} }); }
     if (!ui) { const b = document.getElementById('film'); if (b) b.remove(); return; }
     cancelAnimationFrame(ui.raf);
     if (ui.map) ui.map.remove();
