@@ -269,6 +269,7 @@
     const tw = c.measureText(txt).width + 30, x = pt.x - tw / 2, y = pt.y - 100;
     c.fillStyle = '#e0141e'; rr(c, x, y, tw, 58, 12); c.fill();
     c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(txt, pt.x, y + 30);
+    if (!ui.opts.tram) return;               // buses are drawn as a 3D model on the map
     c.fillStyle = '#e0141e'; c.beginPath(); c.arc(pt.x, pt.y, 16, 0, 7); c.fill();
     c.lineWidth = 5; c.strokeStyle = '#fff'; c.stroke();
   }
@@ -328,6 +329,7 @@
       <div class="fc"><button class="chip on" data-s="sat">Satelita</button><button class="chip" data-s="map">Mapa</button>
         <span style="width:10px"></span>
         <button class="chip" data-v="slow">Wolno</button><button class="chip on" data-v="normal">Normalnie</button><button class="chip" data-v="fast">Szybko</button></div>
+      <div class="fc" id="fveh"><button class="chip on" data-b="art">Przegubowy 18 m</button><button class="chip" data-b="solo">Zwykły 12 m</button></div>
       <div class="fc"><input id="fnum" class="fin" style="width:72px" aria-label="Numer na tablicy"><input id="ftxt" class="fin" style="flex:1;min-width:180px" aria-label="Napis na tablicy">
         <button class="chip" id="fchg">Trasa zmieniona</button>
         <label class="chip" id="ffontl" style="cursor:pointer">Wczytaj czcionkę nazw<input type="file" id="ffont" accept=".otf,.ttf,.woff,.woff2" hidden></label></div>
@@ -343,6 +345,13 @@
     box.querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
       if (run) return; ui.style = b.dataset.s;
       box.querySelectorAll('[data-s]').forEach(x => x.classList.toggle('on', x === b)); makeMap();
+    });
+    ui.bus = 'art';
+    if (opts.tram) box.querySelector('#fveh').style.display = 'none';
+    box.querySelectorAll('[data-b]').forEach(b => b.onclick = () => {
+      if (run) return; ui.bus = b.dataset.b; ui.lastBus = null;
+      box.querySelectorAll('[data-b]').forEach(x => x.classList.toggle('on', x === b));
+      if (ui.map && ui.ready) setBus(ui.busD || 0);
     });
     box.querySelectorAll('[data-v]').forEach(b => b.onclick = () => {
       if (run) return; ui.speed = b.dataset.v;
@@ -402,7 +411,9 @@
       m.addLayer({ id: 'route-c', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-width': 10, 'line-gradient': grad('#5a0000', 0) } });
       m.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-width': 6, 'line-gradient': grad('#ee1c25', 0) } });
       m.addLayer({ id: 'stops', type: 'circle', source: 'stops', paint: { 'circle-radius': 5, 'circle-color': '#fff', 'circle-stroke-color': '#123b96', 'circle-stroke-width': 2.5 } });
-      ui.ready = true; ui.status('Gotowe. Wybierz mapę i prędkość, potem Odtwórz albo Nagraj wideo.');
+      m.addSource('bus', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      m.addLayer({ id: 'bus', type: 'fill-extrusion', source: 'bus', paint: { 'fill-extrusion-color': ['get', 'c'], 'fill-extrusion-height': ['get', 'h'], 'fill-extrusion-base': ['get', 'b'], 'fill-extrusion-opacity': 1 } });
+      ui.ready = true; ui.lastBus = null; setBus(0); ui.status('Gotowe. Wybierz mapę i prędkość, potem Odtwórz albo Nagraj wideo.');
     });
     m.on('error', () => {});
   }
@@ -438,6 +449,61 @@
     const m = ui.map; if (!m.getLayer('route')) return;
     m.setPaintProperty('route', 'line-gradient', grad('#ee1c25', d >= G.len ? 1 : p));
     m.setPaintProperty('route-c', 'line-gradient', grad('#5a0000', d >= G.len ? 1 : p));
+  }
+  // ---------- 3D bus (generic low-floor city bus, 12 m or 18 m articulated), drawn as stacked extrusions ----------
+  const BUS_SCALE = 4;                    // models are enlarged so they read well from the film camera
+  const BUS = {
+    solo: [[0, 12]],                        // sections: [front, rear] metres behind the front bumper
+    art: [[0, 10.4], [11.0, 18.0]]
+  };
+  function posAt(G, x) {                    // point on the route at distance x, extended straight beyond both ends
+    if (x >= 0 && x <= G.len) return at(G, x).p;
+    const a = x < 0 ? G.pts[0] : G.pts[G.pts.length - 1], b = x < 0 ? at(G, Math.min(G.len, 15)).p : at(G, Math.max(0, G.len - 15)).p;
+    const L = hav(a, b) || 1, k = (x < 0 ? -x : x - G.len) / L;
+    return [a[0] + (a[0] - b[0]) * k, a[1] + (a[1] - b[1]) * k];
+  }
+  function boxPoly(f, r, w) {               // rectangle from point f (front) to r (rear), w metres wide
+    const ky = 111320, kx = 111320 * Math.cos(f[0] * rad);
+    let dx = (f[1] - r[1]) * kx, dy = (f[0] - r[0]) * ky; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+    const px = -dy * w / 2, py = dx * w / 2;
+    const c = (p, sx, sy) => [p[1] + sx / kx, p[0] + sy / ky];
+    const ring = [c(f, px, py), c(f, -px, -py), c(r, -px, -py), c(r, px, py)]; ring.push(ring[0]);
+    return ring;
+  }
+  function busFeatures(G, d, type) {
+    const k = BUS_SCALE, W2 = 2.55 * k, out = [];
+    const feat = (ring, b, h, c) => out.push({ type: 'Feature', properties: { b: b * k, h: h * k, c }, geometry: { type: 'Polygon', coordinates: [ring] } });
+    BUS[type].forEach(([a, z], si) => {
+      const f = posAt(G, d - a * k), r = posAt(G, d - z * k);
+      const body = boxPoly(f, r, W2);
+      feat(body, 0.3, 0.95, '#0e2a6e');                       // lower body
+      feat(boxPoly(f, r, W2 * 0.985), 0.95, 2.55, '#1a2330');  // glazing band
+      feat(body, 2.55, 2.9, '#0e2a6e');                       // upper body
+      feat(boxPoly(f, r, W2 * 0.8), 2.9, 3.25, '#e9edf2');     // roof equipment
+      if (si === 0) {                                          // front: windscreen and destination display
+        const f2 = posAt(G, d - 0.35 * k);
+        feat(boxPoly(f, f2, W2 * 0.92), 0.95, 2.7, '#0b1118');
+        feat(boxPoly(f, f2, W2 * 0.7), 2.62, 2.85, '#ffb02e');
+      }
+      if (si === 1) {                                          // articulation bellows
+        const j1 = posAt(G, d - 10.4 * k), j2 = posAt(G, d - 11.0 * k);
+        feat(boxPoly(j1, j2, W2 * 0.92), 0.4, 3.0, '#20242b');
+      }
+    });
+    return out;
+  }
+  function setBus(d) {
+    if (!ui.map || ui.opts.tram) return null;
+    const type = ui.bus || 'art';
+    if (ui.lastBus === type + ':' + d) return null;
+    ui.lastBus = type + ':' + d; ui.busD = d;
+    const m = ui.map, src = m.getSource('bus'); if (!src) return null;
+    const done = new Promise(r => {
+      const f = e => { if (e.sourceId === 'bus' && m.isSourceLoaded('bus')) { m.off('sourcedata', f); r(); } };
+      m.on('sourcedata', f); setTimeout(() => { m.off('sourcedata', f); r(); }, 600);
+    });
+    src.setData({ type: 'FeatureCollection', features: busFeatures(ui.G, d, type) });
+    return done;
   }
   function moveEnd(m) { return new Promise(r => m.once('moveend', r)); }
 
@@ -523,9 +589,11 @@
     const st = stateAt(P, t), m = ui.map;
     m.jumpTo(st.cam);
     setRoute(st.d);
+    const busDone = setBus(st.d);
     const it = st.sign && P.items[st.sign.i];
     ui.scene = { head: st.head, km: st.km,
       sign: st.sign ? { name: it ? it.name : '', req: it && it.req, zone: !!(it && it.zone), t0: st.sign.t0, out: st.sign.out } : null };
+    return busDone;
   }
   function waitRendered(m) {
     return new Promise(r => {
@@ -658,7 +726,8 @@
       if (!ui || run.stop) throw new Error('przerwano');
       if (err) throw err;
       const t = f / FPS;
-      applyState(P, t);
+      const bd = applyState(P, t);
+      if (bd) await bd;                              // the bus model moved: wait until the map has its new shape
       m.redraw();                                   // draw this frame now; wait only if map tiles are still loading
       if (!m.areTilesLoaded()) { await waitRendered(m); m.redraw(); }
       compose(t);
