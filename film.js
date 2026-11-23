@@ -269,7 +269,7 @@
     const tw = c.measureText(txt).width + 30, x = pt.x - tw / 2, y = pt.y - 100;
     c.fillStyle = '#e0141e'; rr(c, x, y, tw, 58, 12); c.fill();
     c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(txt, pt.x, y + 30);
-    if (!ui.opts.tram) return;               // buses are drawn as a 3D model on the map
+    return;                                  // the vehicle is drawn as a 3D model on the map
     c.fillStyle = '#e0141e'; c.beginPath(); c.arc(pt.x, pt.y, 16, 0, 7); c.fill();
     c.lineWidth = 5; c.strokeStyle = '#fff'; c.stroke();
   }
@@ -451,11 +451,13 @@
     m.setPaintProperty('route-c', 'line-gradient', grad('#5a0000', d >= G.len ? 1 : p));
   }
   // ---------- 3D bus (generic low-floor city bus, 12 m or 18 m articulated), drawn as stacked extrusions ----------
-  const BUS_SCALE = 4;                    // models are enlarged so they read well from the film camera
-  const BUS = {
-    solo: [[0, 12]],                        // sections: [front, rear] metres behind the front bumper
-    art: [[0, 10.4], [11.0, 18.0]]
+  const BUS_SCALE = 4;                      // models are enlarged so they read well from the film camera
+  const BUS = {                             // sections: [front, rear] metres behind the front end
+    solo: [[0, 12]],
+    art: [[0, 10.4], [11.0, 18.0]],
+    tram: [[0, 7.2], [7.6, 13.4], [13.8, 19.6], [20.0, 25.8], [26.2, 32.6]]   // generic 5-section low-floor tram, ~33 m
   };
+  const AXLES = { solo: [2.7, 8.7], art: [2.7, 8.6, 16.0], tram: [2.2, 5.2, 15.4, 18.0, 28.0, 30.6] };
   function posAt(G, x) {                    // point on the route at distance x, extended straight beyond both ends
     if (x >= 0 && x <= G.len) return at(G, x).p;
     const a = x < 0 ? G.pts[0] : G.pts[G.pts.length - 1], b = x < 0 ? at(G, Math.min(G.len, 15)).p : at(G, Math.max(0, G.len - 15)).p;
@@ -478,19 +480,27 @@
     const ring = [c(f, off - w / 2), c(f, off + w / 2), c(r, off + w / 2), c(r, off - w / 2)]; ring.push(ring[0]);
     return ring;
   }
-  const DOORS = { solo: [[0.9, 2.1], [5.3, 6.5], [9.9, 11.1]], art: [[0.9, 2.1], [5.0, 6.2], [11.7, 12.9], [15.6, 16.8]] };
+  const DOORS = { solo: [[0.9, 2.1], [5.3, 6.5], [9.9, 11.1]], art: [[0.9, 2.1], [5.0, 6.2], [11.7, 12.9], [15.6, 16.8]],
+    tram: [[1.0, 2.3], [9.0, 10.3], [15.0, 16.3], [21.0, 22.3], [27.4, 28.7]] };
   function busFeatures(G, d, type) {
-    const k = BUS_SCALE, W2 = 2.55 * k, out = [];
+    const tram = type === 'tram', k = tram ? 3 : BUS_SCALE, W2 = (tram ? 2.4 : 2.55) * k, out = [];
     const feat = (ring, b, h, c) => out.push({ type: 'Feature', properties: { b: b * k, h: h * k, c }, geometry: { type: 'Polygon', coordinates: [ring] } });
     BUS[type].forEach(([a, z], si) => {
       const f = posAt(G, d - a * k), r = posAt(G, d - z * k);
       const body = boxPoly(f, r, W2), NAVY = '#163a8c', WHITE = '#f4f6f9', GLASS = '#0f1c3a';
-      feat(body, 0.3, 0.75, WHITE);                           // white skirt (Kraków colours)
-      feat(body, 0.75, 1.0, NAVY);                            // navy side
+      if (tram) feat(body, 0.25, 1.0, NAVY);                  // tram: navy lower body
+      else { feat(body, 0.3, 0.75, WHITE); feat(body, 0.75, 1.0, NAVY); }  // bus: white skirt, navy side (Kraków colours)
       feat(boxPoly(f, r, W2 * 0.99), 1.0, 2.5, GLASS);        // tinted windows on navy
       feat(body, 2.5, 2.85, NAVY);
       feat(boxPoly(f, r, W2 * 0.96), 2.85, 3.0, WHITE);       // white roof
-      feat(boxPoly(posAt(G, d - (a + 1.5) * k), posAt(G, d - (a + 5.5) * k), W2 * 0.7), 3.0, 3.3, '#dfe3e8'); // roof equipment
+      if (!tram) feat(boxPoly(posAt(G, d - (a + 1.5) * k), posAt(G, d - (a + 5.5) * k), W2 * 0.7), 3.0, 3.3, '#dfe3e8'); // roof equipment
+      else if (si % 2 === 0) feat(boxPoly(posAt(G, d - (a + 1.2) * k), posAt(G, d - (z - 1.2) * k), W2 * 0.6), 3.0, 3.35, '#c9ced6');
+      if (tram && si === 2) {                                  // pantograph: base, arm and collector bar
+        const m0 = (a + z) / 2;
+        feat(boxPoly(posAt(G, d - (m0 - 0.8) * k), posAt(G, d - (m0 + 0.8) * k), W2 * 0.5), 3.35, 3.5, '#2a2e35');
+        feat(boxPoly(posAt(G, d - (m0 - 0.1) * k), posAt(G, d - (m0 + 0.1) * k), W2 * 0.12), 3.5, 4.6, '#2a2e35');
+        feat(boxPoly(posAt(G, d - (m0 - 0.15) * k), posAt(G, d - (m0 + 0.15) * k), W2 * 0.7), 4.6, 4.7, '#2a2e35');
+      }
       // window pillars along the glazing band
       for (let x = a + 2.4; x < z - 0.8; x += 1.75) feat(boxPoly(posAt(G, d - x * k), posAt(G, d - (x + 0.14) * k), W2 * 1.005), 1.0, 2.5, NAVY);
       // doors on the right side (dark glass panels from floor to roof line)
@@ -506,26 +516,25 @@
         [1, -1].forEach(sd => feat(sidePoly(posAt(G, d - (z - 0.2) * k), r2, sd * W2 * 0.4, W2 * 0.12), 0.5, 1.3, '#d0141e'));
       }
       // wheels: a pair of dark blocks per axle, sticking out a little at the sides
-      const axles = type === 'solo' ? [2.7, 8.7] : si === 0 ? [2.7, 8.6] : [16.0];
-      axles.forEach(x => { if (x > a && x < z) feat(boxPoly(posAt(G, d - (x - 0.5) * k), posAt(G, d - (x + 0.5) * k), W2 * 1.02), 0, 0.55, '#15171b'); });
+      AXLES[type].forEach(x => { if (x > a && x < z) feat(boxPoly(posAt(G, d - (x - 0.5) * k), posAt(G, d - (x + 0.5) * k), W2 * 1.02), 0, 0.55, '#15171b'); });
       if (si === 0) {                                          // front: windscreen and destination display
         const f2 = posAt(G, d - 0.35 * k);
-        feat(boxPoly(f, f2, W2 * 0.96), 0.3, 0.75, '#f4f6f9');   // white bumper
+        if (!tram) feat(boxPoly(f, f2, W2 * 0.96), 0.3, 0.75, '#f4f6f9');   // white bumper
         feat(boxPoly(f, f2, W2 * 0.94), 0.75, 2.6, '#0b1118');    // black front with windscreen
         feat(boxPoly(f, f2, W2 * 0.7), 2.55, 2.8, '#ffb02e');     // destination display
         const f3 = posAt(G, d - 0.4 * k);                          // headlights at both front corners
         [1, -1].forEach(sd => feat(sidePoly(f, f3, sd * W2 * 0.36, W2 * 0.16), 0.45, 0.7, '#fff6d8'));
       }
-      if (si === 1) {                                          // articulation bellows
-        const j1 = posAt(G, d - 10.4 * k), j2 = posAt(G, d - 11.0 * k);
+      if (si > 0) {                                            // articulation bellows to the previous section
+        const j1 = posAt(G, d - BUS[type][si - 1][1] * k), j2 = posAt(G, d - a * k);
         feat(boxPoly(j1, j2, W2 * 0.92), 0.4, 3.0, '#20242b');
       }
     });
     return out;
   }
   function setBus(d) {
-    if (!ui.map || ui.opts.tram) return null;
-    const type = ui.bus || 'art';
+    if (!ui.map) return null;
+    const type = ui.opts.tram ? 'tram' : ui.bus || 'art';
     if (ui.lastBus === type + ':' + d) return null;
     ui.lastBus = type + ':' + d; ui.busD = d;
     const m = ui.map, src = m.getSource('bus'); if (!src) return null;
