@@ -470,6 +470,15 @@
     const ring = [c(f, px, py), c(f, -px, -py), c(r, -px, -py), c(r, px, py)]; ring.push(ring[0]);
     return ring;
   }
+  function sidePoly(f, r, off, w) {         // rectangle beside the centre line: off = metres to the right (+) of the bus axis
+    const ky = 111320, kx = 111320 * Math.cos(f[0] * rad);
+    let dx = (f[1] - r[1]) * kx, dy = (f[0] - r[0]) * ky; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+    const rx = dy, ry = -dx;                // right-hand normal
+    const c = (p, o) => [p[1] + rx * o / kx, p[0] + ry * o / ky];
+    const ring = [c(f, off - w / 2), c(f, off + w / 2), c(r, off + w / 2), c(r, off - w / 2)]; ring.push(ring[0]);
+    return ring;
+  }
+  const DOORS = { solo: [[0.9, 2.1], [5.3, 6.5], [9.9, 11.1]], art: [[0.9, 2.1], [5.0, 6.2], [11.7, 12.9], [15.6, 16.8]] };
   function busFeatures(G, d, type) {
     const k = BUS_SCALE, W2 = 2.55 * k, out = [];
     const feat = (ring, b, h, c) => out.push({ type: 'Feature', properties: { b: b * k, h: h * k, c }, geometry: { type: 'Polygon', coordinates: [ring] } });
@@ -482,6 +491,16 @@
       feat(body, 2.5, 2.85, NAVY);
       feat(boxPoly(f, r, W2 * 0.96), 2.85, 3.0, WHITE);       // white roof
       feat(boxPoly(posAt(G, d - (a + 1.5) * k), posAt(G, d - (a + 5.5) * k), W2 * 0.7), 3.0, 3.3, '#dfe3e8'); // roof equipment
+      // window pillars along the glazing band
+      for (let x = a + 2.4; x < z - 0.8; x += 1.75) feat(boxPoly(posAt(G, d - x * k), posAt(G, d - (x + 0.14) * k), W2 * 1.005), 1.0, 2.5, NAVY);
+      // doors on the right side (dark glass panels from floor to roof line)
+      DOORS[type].forEach(([x0, x1]) => { if (x0 >= a && x1 <= z) {
+        const p0 = posAt(G, d - x0 * k), p1 = posAt(G, d - x1 * k);
+        feat(sidePoly(p0, p1, W2 / 2, 0.12 * k), 0.35, 2.45, '#0a1226');
+        feat(sidePoly(posAt(G, d - (x0 + 0.55) * k), posAt(G, d - (x0 + 0.62) * k), W2 / 2, 0.14 * k), 0.35, 2.45, NAVY);
+      } });
+      // rear window on the last section
+      if (si === BUS[type].length - 1) feat(boxPoly(posAt(G, d - (z - 0.3) * k), r, W2 * 0.9), 1.4, 2.5, '#0a1226');
       // wheels: a pair of dark blocks per axle, sticking out a little at the sides
       const axles = type === 'solo' ? [2.7, 8.7] : si === 0 ? [2.7, 8.6] : [16.0];
       axles.forEach(x => { if (x > a && x < z) feat(boxPoly(posAt(G, d - (x - 0.5) * k), posAt(G, d - (x + 0.5) * k), W2 * 1.02), 0, 0.55, '#15171b'); });
