@@ -475,15 +475,21 @@
     const feat = (ring, b, h, c) => out.push({ type: 'Feature', properties: { b: b * k, h: h * k, c }, geometry: { type: 'Polygon', coordinates: [ring] } });
     BUS[type].forEach(([a, z], si) => {
       const f = posAt(G, d - a * k), r = posAt(G, d - z * k);
-      const body = boxPoly(f, r, W2);
-      feat(body, 0.3, 0.95, '#0e2a6e');                       // lower body
-      feat(boxPoly(f, r, W2 * 0.985), 0.95, 2.55, '#1a2330');  // glazing band
-      feat(body, 2.55, 2.9, '#0e2a6e');                       // upper body
-      feat(boxPoly(f, r, W2 * 0.8), 2.9, 3.25, '#e9edf2');     // roof equipment
+      const body = boxPoly(f, r, W2), NAVY = '#163a8c', WHITE = '#f4f6f9', GLASS = '#0f1c3a';
+      feat(body, 0.3, 0.75, WHITE);                           // white skirt (Kraków colours)
+      feat(body, 0.75, 1.0, NAVY);                            // navy side
+      feat(boxPoly(f, r, W2 * 0.99), 1.0, 2.5, GLASS);        // tinted windows on navy
+      feat(body, 2.5, 2.85, NAVY);
+      feat(boxPoly(f, r, W2 * 0.96), 2.85, 3.0, WHITE);       // white roof
+      feat(boxPoly(posAt(G, d - (a + 1.5) * k), posAt(G, d - (a + 5.5) * k), W2 * 0.7), 3.0, 3.3, '#dfe3e8'); // roof equipment
+      // wheels: a pair of dark blocks per axle, sticking out a little at the sides
+      const axles = type === 'solo' ? [2.7, 8.7] : si === 0 ? [2.7, 8.6] : [16.0];
+      axles.forEach(x => { if (x > a && x < z) feat(boxPoly(posAt(G, d - (x - 0.5) * k), posAt(G, d - (x + 0.5) * k), W2 * 1.02), 0, 0.55, '#15171b'); });
       if (si === 0) {                                          // front: windscreen and destination display
         const f2 = posAt(G, d - 0.35 * k);
-        feat(boxPoly(f, f2, W2 * 0.92), 0.95, 2.7, '#0b1118');
-        feat(boxPoly(f, f2, W2 * 0.7), 2.62, 2.85, '#ffb02e');
+        feat(boxPoly(f, f2, W2 * 0.96), 0.3, 0.75, '#f4f6f9');   // white bumper
+        feat(boxPoly(f, f2, W2 * 0.94), 0.75, 2.6, '#0b1118');    // black front with windscreen
+        feat(boxPoly(f, f2, W2 * 0.7), 2.55, 2.8, '#ffb02e');     // destination display
       }
       if (si === 1) {                                          // articulation bellows
         const j1 = posAt(G, d - 10.4 * k), j2 = posAt(G, d - 11.0 * k);
