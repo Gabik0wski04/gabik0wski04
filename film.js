@@ -482,52 +482,70 @@
   }
   const DOORS = { solo: [[0.9, 2.1], [5.3, 6.5], [9.9, 11.1]], art: [[0.9, 2.1], [5.0, 6.2], [11.7, 12.9], [15.6, 16.8]],
     tram: [[1.0, 2.3], [9.0, 10.3], [15.0, 16.3], [21.0, 22.3], [27.4, 28.7]] };
+  // route distance behind s0 whose straight-line distance from the point at s0 is L (rigid body on a curved route)
+  function chordBack(G, s0, L) {
+    const p0 = posAt(G, s0);
+    let lo = s0 - L, hi = s0 - L;
+    if (hav(p0, posAt(G, lo)) >= L - 0.01) return lo;
+    for (let s = s0 - L; s > s0 - 4 * L; s -= L * 0.1) { if (hav(p0, posAt(G, s)) >= L) { lo = s; break; } hi = s; lo = s - L * 0.1; }
+    for (let it = 0; it < 18; it++) { const m = (lo + hi) / 2; if (hav(p0, posAt(G, m)) >= L) lo = m; else hi = m; }
+    return lo;
+  }
   function busFeatures(G, d, type) {
     const tram = type === 'tram', k = tram ? 3 : BUS_SCALE, W2 = (tram ? 2.4 : 2.55) * k, out = [];
+    const NAVY = '#163a8c', WHITE = '#f4f6f9', GLASS = '#0f1c3a', DARK = '#0a1226';
     const feat = (ring, b, h, c) => out.push({ type: 'Feature', properties: { b: b * k, h: h * k, c }, geometry: { type: 'Polygon', coordinates: [ring] } });
-    BUS[type].forEach(([a, z], si) => {
-      const f = posAt(G, d - a * k), r = posAt(G, d - z * k);
-      const body = boxPoly(f, r, W2), NAVY = '#163a8c', WHITE = '#f4f6f9', GLASS = '#0f1c3a';
-      if (tram) feat(body, 0.25, 1.0, NAVY);                  // tram: navy lower body
-      else { feat(body, 0.3, 0.75, WHITE); feat(body, 0.75, 1.0, NAVY); }  // bus: white skirt, navy side (Kraków colours)
-      feat(boxPoly(f, r, W2 * 0.99), 1.0, 2.5, GLASS);        // tinted windows on navy
-      feat(body, 2.5, 2.85, NAVY);
-      feat(boxPoly(f, r, W2 * 0.96), 2.85, 3.0, WHITE);       // white roof
-      if (!tram) feat(boxPoly(posAt(G, d - (a + 1.5) * k), posAt(G, d - (a + 5.5) * k), W2 * 0.7), 3.0, 3.3, '#dfe3e8'); // roof equipment
-      else if (si % 2 === 0) feat(boxPoly(posAt(G, d - (a + 1.2) * k), posAt(G, d - (z - 1.2) * k), W2 * 0.6), 3.0, 3.35, '#c9ced6');
-      if (tram && si === 2) {                                  // pantograph: base, arm and collector bar
+    // place every section as a straight rigid box: front on the route, rear where the route is exactly one body length away
+    const S = BUS[type], secs = [];
+    let sF = d;
+    S.forEach(([a, z], si) => {
+      if (si > 0) sF = chordBack(G, secs[si - 1].sR, (a - S[si - 1][1]) * k);
+      const sR = chordBack(G, sF, (z - a) * k);
+      secs.push({ a, z, sF, sR, f: posAt(G, sF), r: posAt(G, sR) });
+    });
+    // point at x metres behind the vehicle front, on the straight axis of the section that contains x
+    const P = x => {
+      let sc = secs[0];
+      for (const q of secs) if (x >= q.a - 0.001) sc = q;
+      const u = (x - sc.a) / (sc.z - sc.a);
+      return [sc.f[0] + (sc.r[0] - sc.f[0]) * u, sc.f[1] + (sc.r[1] - sc.f[1]) * u];
+    };
+    const box = (x0, x1, w, b, h, c) => feat(boxPoly(P(x0), P(x1), w), b, h, c);
+    const side = (x0, x1, off, w, b, h, c) => feat(sidePoly(P(x0), P(x1), off, w), b, h, c);
+    secs.forEach(({ a, z }, si) => {
+      const first = si === 0, last = si === S.length - 1;
+      if (tram) box(a, z, W2, 0.25, 1.0, NAVY);
+      else { box(a, z, W2, 0.3, 0.75, WHITE); box(a, z, W2, 0.75, 1.0, NAVY); }
+      box(a, z, W2 * 0.97, 1.0, 2.5, GLASS);                   // windows (set slightly in)
+      box(a, z, W2, 2.5, 2.85, NAVY);
+      box(a, z, W2 * 0.94, 2.85, 3.0, WHITE);                  // roof
+      if (!tram) box(a + 1.5, Math.min(z - 0.5, a + 5.5), W2 * 0.7, 3.0, 3.3, '#dfe3e8');
+      else if (si % 2 === 0) box(a + 1.2, z - 1.2, W2 * 0.6, 3.0, 3.35, '#c9ced6');
+      if (tram && si === 2) {                                  // pantograph
         const m0 = (a + z) / 2;
-        feat(boxPoly(posAt(G, d - (m0 - 0.8) * k), posAt(G, d - (m0 + 0.8) * k), W2 * 0.5), 3.35, 3.5, '#2a2e35');
-        feat(boxPoly(posAt(G, d - (m0 - 0.1) * k), posAt(G, d - (m0 + 0.1) * k), W2 * 0.12), 3.5, 4.6, '#2a2e35');
-        feat(boxPoly(posAt(G, d - (m0 - 0.15) * k), posAt(G, d - (m0 + 0.15) * k), W2 * 0.7), 4.6, 4.7, '#2a2e35');
+        box(m0 - 0.8, m0 + 0.8, W2 * 0.5, 3.35, 3.5, '#2a2e35');
+        box(m0 - 0.1, m0 + 0.1, W2 * 0.12, 3.5, 4.6, '#2a2e35');
+        box(m0 - 0.15, m0 + 0.15, W2 * 0.7, 4.6, 4.7, '#2a2e35');
       }
-      // window pillars along the glazing band
-      for (let x = a + 2.4; x < z - 0.8; x += 1.75) feat(boxPoly(posAt(G, d - x * k), posAt(G, d - (x + 0.14) * k), W2 * 1.005), 1.0, 2.5, NAVY);
-      // doors on the right side (dark glass panels from floor to roof line)
+      for (let x = a + (first ? 2.4 : 1.2); x < z - 0.8; x += 1.75) box(x, x + 0.14, W2, 1.0, 2.5, NAVY);   // window pillars
       DOORS[type].forEach(([x0, x1]) => { if (x0 >= a && x1 <= z) {
-        const p0 = posAt(G, d - x0 * k), p1 = posAt(G, d - x1 * k);
-        feat(sidePoly(p0, p1, W2 / 2, 0.12 * k), 0.35, 2.45, '#0a1226');
-        feat(sidePoly(posAt(G, d - (x0 + 0.55) * k), posAt(G, d - (x0 + 0.62) * k), W2 / 2, 0.14 * k), 0.35, 2.45, NAVY);
+        side(x0, x1, W2 / 2, 0.12 * k, 0.35, 2.45, DARK);
+        side(x0 + 0.55, x0 + 0.62, W2 / 2, 0.16 * k, 0.35, 2.45, NAVY);
       } });
-      // rear window on the last section
-      if (si === BUS[type].length - 1) {
-        feat(boxPoly(posAt(G, d - (z - 0.3) * k), r, W2 * 0.9), 1.4, 2.5, '#0a1226');
-        const r2 = posAt(G, d - (z + 0.05) * k);                   // tail lights
-        [1, -1].forEach(sd => feat(sidePoly(posAt(G, d - (z - 0.2) * k), r2, sd * W2 * 0.4, W2 * 0.12), 0.5, 1.3, '#d0141e'));
+      AXLES[type].forEach(x => { if (x > a && x < z) box(x - 0.5, x + 0.5, W2 * 1.06, 0, 0.5, '#15171b'); });
+      if (first) {                                             // front
+        if (!tram) box(0, 0.35, W2 * 0.96, 0.3, 0.75, WHITE);
+        box(-0.02, 0.35, W2 * 0.94, 0.75, 2.6, '#0b1118');
+        box(-0.04, 0.3, W2 * 0.7, 2.55, 2.8, '#ffb02e');
+        [1, -1].forEach(sd => side(-0.04, 0.3, sd * W2 * 0.36, W2 * 0.16, 0.45, 0.7, '#fff6d8'));
       }
-      // wheels: a pair of dark blocks per axle, sticking out a little at the sides
-      AXLES[type].forEach(x => { if (x > a && x < z) feat(boxPoly(posAt(G, d - (x - 0.5) * k), posAt(G, d - (x + 0.5) * k), W2 * 1.02), 0, 0.55, '#15171b'); });
-      if (si === 0) {                                          // front: windscreen and destination display
-        const f2 = posAt(G, d - 0.35 * k);
-        if (!tram) feat(boxPoly(f, f2, W2 * 0.96), 0.3, 0.75, '#f4f6f9');   // white bumper
-        feat(boxPoly(f, f2, W2 * 0.94), 0.75, 2.6, '#0b1118');    // black front with windscreen
-        feat(boxPoly(f, f2, W2 * 0.7), 2.55, 2.8, '#ffb02e');     // destination display
-        const f3 = posAt(G, d - 0.4 * k);                          // headlights at both front corners
-        [1, -1].forEach(sd => feat(sidePoly(f, f3, sd * W2 * 0.36, W2 * 0.16), 0.45, 0.7, '#fff6d8'));
+      if (last) {                                              // rear
+        box(z - 0.3, z + 0.02, W2 * 0.9, 1.4, 2.5, DARK);
+        [1, -1].forEach(sd => side(z - 0.2, z + 0.04, sd * W2 * 0.4, W2 * 0.12, 0.5, 1.3, '#d0141e'));
       }
-      if (si > 0) {                                            // articulation bellows to the previous section
-        const j1 = posAt(G, d - BUS[type][si - 1][1] * k), j2 = posAt(G, d - a * k);
-        feat(boxPoly(j1, j2, W2 * 0.92), 0.4, 3.0, '#20242b');
+      if (si > 0) {                                            // bellows to the previous section
+        const pv = secs[si - 1];
+        feat(boxPoly(pv.r, secs[si].f, W2 * 0.92), 0.4, 3.0, '#20242b');
       }
     });
     return out;
