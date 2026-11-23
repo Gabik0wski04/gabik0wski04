@@ -411,8 +411,7 @@
       m.addLayer({ id: 'route-c', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-width': 10, 'line-gradient': grad('#5a0000', 0) } });
       m.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-width': 6, 'line-gradient': grad('#ee1c25', 0) } });
       m.addLayer({ id: 'stops', type: 'circle', source: 'stops', paint: { 'circle-radius': 5, 'circle-color': '#fff', 'circle-stroke-color': '#123b96', 'circle-stroke-width': 2.5 } });
-      m.addSource('bus', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-      m.addLayer({ id: 'bus', type: 'fill-extrusion', source: 'bus', paint: { 'fill-extrusion-color': ['get', 'c'], 'fill-extrusion-height': ['get', 'h'], 'fill-extrusion-base': ['get', 'b'], 'fill-extrusion-opacity': 1 } });
+      m.addLayer(vehicleLayer());
       ui.ready = true; ui.lastBus = null; setBus(0); ui.status('Gotowe. Wybierz mapę i prędkość, potem Odtwórz albo Nagraj wideo.');
     });
     m.on('error', () => {});
@@ -434,7 +433,7 @@
     if (!ui) return;
     if (!ui.offline) {                      // while an offline render runs it draws the frames itself
       let t = performance.now() / 1000;
-      if (run && run.live) { t = run.aud.ac.currentTime - run.base; applyState(run.plan, t); }
+      if (run && run.live) { t = run.aud.ac.currentTime - run.base; applyState(run.plan, t); try { ui.map.redraw(); } catch (e) {} }
       compose(t);
     }
     ui.raf = requestAnimationFrame(loop);
@@ -550,18 +549,70 @@
     });
     return out;
   }
+  // the vehicle is drawn by our own WebGL layer in the same frame as the camera move: no lag, no jumping
+  function vehicleLayer() {
+    let prog, buf, aPos, aCol, uMat;
+    return {
+      id: 'veh', type: 'custom', renderingMode: '3d',
+      onAdd(map, gl) {
+        const sh = (t, src) => { const x = gl.createShader(t); gl.shaderSource(x, src); gl.compileShader(x); return x; };
+        prog = gl.createProgram();
+        gl.attachShader(prog, sh(gl.VERTEX_SHADER, 'uniform mat4 u_m; attribute vec3 a_p; attribute vec3 a_c; varying vec3 v_c; void main(){ v_c = a_c; gl_Position = u_m * vec4(a_p, 1.0); }'));
+        gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, 'precision mediump float; varying vec3 v_c; void main(){ gl_FragColor = vec4(v_c, 1.0); }'));
+        gl.linkProgram(prog);
+        aPos = gl.getAttribLocation(prog, 'a_p'); aCol = gl.getAttribLocation(prog, 'a_c'); uMat = gl.getUniformLocation(prog, 'u_m');
+        buf = gl.createBuffer();
+      },
+      render(gl, args) {
+        const V = ui && ui.veh; if (!V || !V.n) return;
+        const M = (args.defaultProjectionData && args.defaultProjectionData.mainMatrix) || args.modelViewProjectionMatrix || args;
+        // move the origin to the vehicle so the small local coordinates keep full precision
+        const o = V.o, T = Array.from(M);
+        for (let r = 0; r < 4; r++) T[12 + r] = M[r] * o[0] + M[4 + r] * o[1] + M[8 + r] * o[2] + M[12 + r];
+        gl.useProgram(prog);
+        gl.uniformMatrix4fv(uMat, false, new Float32Array(T));
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        if (V.dirty) { gl.bufferData(gl.ARRAY_BUFFER, V.data, gl.DYNAMIC_DRAW); V.dirty = false; }
+        gl.enableVertexAttribArray(aPos); gl.enableVertexAttribArray(aCol);
+        gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 24, 0);
+        gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, 24, 12);
+        gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(true);
+        gl.disable(gl.BLEND); gl.disable(gl.CULL_FACE);
+        gl.drawArrays(gl.TRIANGLES, 0, V.n);
+      }
+    };
+  }
+  // boxes (ring of 4 corners, base, top, colour) -> triangles with simple sun shading
+  function meshFrom(feats) {
+    if (!feats.length) return { n: 0 };
+    const MC = maplibregl.MercatorCoordinate, r0 = feats[0].geometry.coordinates[0][0];
+    const o = MC.fromLngLat(r0, 0), u = o.meterInMercatorCoordinateUnits();
+    const out = [];
+    const sun = [-0.45, 0.6, 0.66];                       // light from the north-west, above
+    feats.forEach(f => {
+      const ring = f.geometry.coordinates[0].slice(0, 4).map(ll => { const c = MC.fromLngLat(ll, 0); return [c.x - o.x, c.y - o.y]; });
+      const b = f.properties.b * u, h = f.properties.h * u, hex = f.properties.c;
+      const col = [parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255];
+      const put = (p, z, k) => out.push(p[0], p[1], z, col[0] * k, col[1] * k, col[2] * k);
+      const tri = (a, bb, c, z1, z2, z3, k) => { put(a, z1, k); put(bb, z2, k); put(c, z3, k); };
+      tri(ring[0], ring[1], ring[2], h, h, h, 1.0); tri(ring[0], ring[2], ring[3], h, h, h, 1.0);         // top
+      for (let i = 0; i < 4; i++) {
+        const p = ring[i], q = ring[(i + 1) % 4];
+        let nx = q[1] - p[1], ny = -(q[0] - p[0]); const L = Math.hypot(nx, ny) || 1; nx /= L; ny /= L;
+        const k = 0.62 + 0.3 * Math.max(0, Math.max(nx * sun[0] - ny * sun[1], -(nx * sun[0] - ny * sun[1])) );
+        tri(p, q, q, b, b, h, k); tri(p, q, p, b, h, h, k);
+      }
+    });
+    return { o: [o.x, o.y, 0], data: new Float32Array(out), n: out.length / 6, dirty: true };
+  }
   function setBus(d) {
     if (!ui.map) return null;
     const type = ui.opts.tram ? 'tram' : ui.bus || 'art';
     if (ui.lastBus === type + ':' + d) return null;
     ui.lastBus = type + ':' + d; ui.busD = d;
-    const m = ui.map, src = m.getSource('bus'); if (!src) return null;
-    const done = new Promise(r => {
-      const f = e => { if (e.sourceId === 'bus' && m.isSourceLoaded('bus')) { m.off('sourcedata', f); r(); } };
-      m.on('sourcedata', f); setTimeout(() => { m.off('sourcedata', f); r(); }, 600);
-    });
-    src.setData({ type: 'FeatureCollection', features: busFeatures(ui.G, d, type) });
-    return done;
+    ui.veh = meshFrom(busFeatures(ui.G, d, type));
+    ui.map.triggerRepaint();
+    return null;
   }
   function moveEnd(m) { return new Promise(r => m.once('moveend', r)); }
 
