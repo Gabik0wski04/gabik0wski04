@@ -269,7 +269,7 @@
     const tw = c.measureText(txt).width + 30, x = pt.x - tw / 2, y = pt.y - 100;
     c.fillStyle = '#e0141e'; rr(c, x, y, tw, 58, 12); c.fill();
     c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(txt, pt.x, y + 30);
-    return;                                  // the vehicle is drawn as a 3D model on the map
+    if (ui.bus !== 'dot') return;            // otherwise the vehicle is drawn as a 3D model on the map
     c.fillStyle = '#e0141e'; c.beginPath(); c.arc(pt.x, pt.y, 16, 0, 7); c.fill();
     c.lineWidth = 5; c.strokeStyle = '#fff'; c.stroke();
   }
@@ -329,7 +329,7 @@
       <div class="fc"><button class="chip on" data-s="sat">Satelita</button><button class="chip" data-s="map">Mapa</button>
         <span style="width:10px"></span>
         <button class="chip" data-v="slow">Wolno</button><button class="chip on" data-v="normal">Normalnie</button><button class="chip" data-v="fast">Szybko</button></div>
-      <div class="fc" id="fveh"><button class="chip on" data-b="art">Przegubowy 18 m</button><button class="chip" data-b="solo">Zwykły 12 m</button></div>
+      <div class="fc" id="fveh">${opts.tram ? '<button class="chip on" data-b="tram">Tramwaj</button>' : '<button class="chip on" data-b="art">Przegubowy 18 m</button><button class="chip" data-b="solo">Zwykły 12 m</button>'}<button class="chip" data-b="dot">Kropka</button></div>
       <div class="fc"><input id="fnum" class="fin" style="width:72px" aria-label="Numer na tablicy"><input id="ftxt" class="fin" style="flex:1;min-width:180px" aria-label="Napis na tablicy">
         <button class="chip" id="fchg">Trasa zmieniona</button>
         <label class="chip" id="ffontl" style="cursor:pointer">Wczytaj czcionkę nazw<input type="file" id="ffont" accept=".otf,.ttf,.woff,.woff2" hidden></label></div>
@@ -346,8 +346,7 @@
       if (run) return; ui.style = b.dataset.s;
       box.querySelectorAll('[data-s]').forEach(x => x.classList.toggle('on', x === b)); makeMap();
     });
-    ui.bus = 'art';
-    if (opts.tram) box.querySelector('#fveh').style.display = 'none';
+    ui.bus = opts.tram ? 'tram' : 'art';
     box.querySelectorAll('[data-b]').forEach(b => b.onclick = () => {
       if (run) return; ui.bus = b.dataset.b; ui.lastBus = null;
       box.querySelectorAll('[data-b]').forEach(x => x.classList.toggle('on', x === b));
@@ -607,10 +606,10 @@
   }
   function setBus(d) {
     if (!ui.map) return null;
-    const type = ui.opts.tram ? 'tram' : ui.bus || 'art';
+    const type = ui.bus || (ui.opts.tram ? 'tram' : 'art');
     if (ui.lastBus === type + ':' + d) return null;
     ui.lastBus = type + ':' + d; ui.busD = d;
-    ui.veh = meshFrom(busFeatures(ui.G, d, type));
+    ui.veh = type === 'dot' ? null : meshFrom(busFeatures(ui.G, d, type));
     ui.map.triggerRepaint();
     return null;
   }
