@@ -500,7 +500,11 @@
         feat(sidePoly(posAt(G, d - (x0 + 0.55) * k), posAt(G, d - (x0 + 0.62) * k), W2 / 2, 0.14 * k), 0.35, 2.45, NAVY);
       } });
       // rear window on the last section
-      if (si === BUS[type].length - 1) feat(boxPoly(posAt(G, d - (z - 0.3) * k), r, W2 * 0.9), 1.4, 2.5, '#0a1226');
+      if (si === BUS[type].length - 1) {
+        feat(boxPoly(posAt(G, d - (z - 0.3) * k), r, W2 * 0.9), 1.4, 2.5, '#0a1226');
+        const r2 = posAt(G, d - (z + 0.05) * k);                   // tail lights
+        [1, -1].forEach(sd => feat(sidePoly(posAt(G, d - (z - 0.2) * k), r2, sd * W2 * 0.4, W2 * 0.12), 0.5, 1.3, '#d0141e'));
+      }
       // wheels: a pair of dark blocks per axle, sticking out a little at the sides
       const axles = type === 'solo' ? [2.7, 8.7] : si === 0 ? [2.7, 8.6] : [16.0];
       axles.forEach(x => { if (x > a && x < z) feat(boxPoly(posAt(G, d - (x - 0.5) * k), posAt(G, d - (x + 0.5) * k), W2 * 1.02), 0, 0.55, '#15171b'); });
@@ -509,6 +513,8 @@
         feat(boxPoly(f, f2, W2 * 0.96), 0.3, 0.75, '#f4f6f9');   // white bumper
         feat(boxPoly(f, f2, W2 * 0.94), 0.75, 2.6, '#0b1118');    // black front with windscreen
         feat(boxPoly(f, f2, W2 * 0.7), 2.55, 2.8, '#ffb02e');     // destination display
+        const f3 = posAt(G, d - 0.4 * k);                          // headlights at both front corners
+        [1, -1].forEach(sd => feat(sidePoly(f, f3, sd * W2 * 0.36, W2 * 0.16), 0.45, 0.7, '#fff6d8'));
       }
       if (si === 1) {                                          // articulation bellows
         const j1 = posAt(G, d - 10.4 * k), j2 = posAt(G, d - 11.0 * k);
