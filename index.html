@@ -466,7 +466,14 @@ async function kBuild(){
   const bufs=[];for(const b of KSEQ)bufs.push(await KAC.decodeAudioData(await (await getBlob(kRec(b),'mp3')).arrayBuffer()));
   const SR=KAC.sampleRate,gap=Math.round(0.06*SR),len=bufs.reduce((a,b)=>a+b.length,0)+gap*(bufs.length-1);
   const out=KAC.createBuffer(1,len,SR),d=out.getChannelData(0);let o=0;
-  bufs.forEach((b,i)=>{const c=b.getChannelData(0);if(b.numberOfChannels>1){const c2=b.getChannelData(1);for(let j=0;j<c.length;j++)d[o+j]=(c[j]+c2[j])/2}else d.set(c,o);o+=b.length+gap});
+  bufs.forEach((b,i)=>{
+    const c=b.getChannelData(0),c2=b.numberOfChannels>1?b.getChannelData(1):null,x=new Float32Array(c.length);
+    for(let j=0;j<c.length;j++)x[j]=c2?(c[j]+c2[j])/2:c[j];
+    // even loudness: recordings come from different sources, so bring every part's speech to the same level
+    let sum=0,n=0,pk=0;for(let j=0;j<x.length;j++){const a=Math.abs(x[j]);if(a>pk)pk=a;if(a>0.01){sum+=x[j]*x[j];n++}}
+    const rms=n?Math.sqrt(sum/n):0,g=rms?Math.min(0.13/rms,0.97/(pk||1)):1;
+    for(let j=0;j<x.length;j++)d[o+j]=x[j]*g;
+    o+=b.length+gap});
   return out;
 }
 async function kRender(save){
