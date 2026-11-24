@@ -22,6 +22,11 @@ h1{font-size:30px;margin:0;line-height:1}
 .search{display:flex;gap:8px;margin:6px 0 14px;flex-wrap:wrap}
 .search input{flex:1;min-width:180px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;color:var(--text);font-size:16px;outline:none}
 .search input:focus{border-color:var(--led)}
+.kb{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;margin:8px 0}
+.kb select,.kb input[type=text]{background:var(--bg,#0b0e13);border:1px solid var(--line);border-radius:10px;padding:9px 10px;color:var(--text);font-size:15px}
+.kb input[type=text]{flex:1;min-width:160px}.kb .n{color:var(--mute);min-width:22px;text-align:center}
+.kb label{color:var(--mute);font-size:14px;display:flex;gap:4px;align-items:center}.kb.bad{border-color:#c33}
+.kbar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:9px 14px;font-size:14px;color:var(--mute)}
 .chip.on{background:var(--led);color:#1a1200;border-color:var(--led);font-weight:600}
 .group h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);margin:20px 0 8px;font-weight:600}
@@ -338,7 +343,7 @@ function stopsView(){
 }
 
 // ---------- tabs ----------
-const TABS=[['','Linie'],['przystanki','Przystanki'],['specjalne','Specjalne'],['archiwum','Archiwum'],['braki','Braki']];
+const TABS=[['','Linie'],['przystanki','Przystanki'],['specjalne','Specjalne'],['archiwum','Archiwum'],['kreator','Kreator'],['braki','Braki']];
 function tabsHTML(cur){return `<div class="tabs">${TABS.map(([h,t])=>`<button class="chip ${h===cur?'on':''}" data-tab="${h}">${t}</button>`).join('')}</div>`}
 function bindTabs(){document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab})}
 function isLineIntro(k){return /^Linia \S+$/.test(k)}
@@ -402,8 +407,86 @@ function missingView(){
   bindTabs();document.querySelectorAll('[data-l]').forEach(b=>b.onclick=()=>{location.hash='l-'+encodeURIComponent(b.dataset.l)});
 }
 
+
+// ---------- creator: build your own announcement from phrases, line numbers and stop names ----------
+const KTYPES=[['f','Fraza'],['n','Numer linii'],['s','Przystanek']];
+let KSEQ=null;
+function kLoad(){if(KSEQ)return;try{KSEQ=JSON.parse(localStorage.getItem('kreator'))}catch(e){}if(!Array.isArray(KSEQ))KSEQ=[{t:'f',v:'Następny przystanek'},{t:'s',v:'',r:0}]}
+function kSave(){try{localStorage.setItem('kreator',JSON.stringify(KSEQ))}catch(e){}}
+function kNums(){const a=Object.keys(DATA.nums||{});Object.keys(DATA.archive||{}).filter(isLineIntro).forEach(k=>{const n=k.slice(6);if(!a.includes(n))a.push(n)});return a.sort(numSort)}
+function kStops(){return [...new Set(Object.keys(DATA.stops).concat(Object.keys(archStops())))].sort((a,b)=>a.localeCompare(b,'pl'))}
+function kRec(b){
+  if(b.t==='f'){const x=(SPECIAL||[]).find(x=>x.name===b.v);return x?{f:x.f}:null}
+  if(b.t==='n'){const v=b.v.trim();if(DATA.nums&&DATA.nums[v])return{e:DATA.nums[v],t:'a'};const a=(DATA.archive||{})['Linia '+v];return a?{e:a,t:'p'}:null}
+  const r=DATA.stops[b.v]||archStops()[b.v];return r?{e:r,t:b.r?'z':'p'}:null}
+const KPRESETS={
+  'Następny przystanek':()=>[{t:'f',v:'Następny przystanek'},{t:'s',v:'',r:0}],
+  'Przystanek':()=>[{t:'f',v:'Przystanek'},{t:'s',v:'',r:0}],
+  'Zapowiedź liniowa':()=>[{t:'f',v:'Linia'},{t:'n',v:''},{t:'f',v:'Kierunek'},{t:'s',v:'',r:0}],
+  'Pusta':()=>[]};
+async function creatorView(){
+  document.title='Kreator zapowiedzi';
+  if(!SPECIAL){try{SPECIAL=await (await fetch('special/list.json',{cache:'no-cache'})).json()}catch(e){SPECIAL=[]}}
+  kLoad();
+  const opts=t=>KTYPES.map(([k,n])=>`<option value="${k}" ${k===t?'selected':''}>${n}</option>`).join('');
+  $('#app').innerHTML=`
+  <header class="top"><div><h1><span class="led">ZAPOWIEDZI</span></h1><div class="sub">Kreator – złóż własną zapowiedź</div></div></header>
+  ${tabsHTML('kreator')}
+  <p class="empty-note">Wybierz gotowy układ albo dodawaj elementy po kolei. Przystanki i numery linii obejmują też archiwum.</p>
+  <div class="kbar">${Object.keys(KPRESETS).map(k=>`<button class="chip" data-kp="${esc(k)}">${esc(k)}</button>`).join('')}</div>
+  <datalist id="kdf">${(SPECIAL||[]).map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist>
+  <datalist id="kdn">${kNums().map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+  <datalist id="kds">${kStops().map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+  <div id="kl">${KSEQ.map((b,i)=>`<div class="kb ${b.v&&!kRec(b)?'bad':''}" data-k="${i}"><span class="n">${i+1}</span>
+    <select data-kt="${i}">${opts(b.t)}</select>
+    <input type="text" data-kv="${i}" list="kd${b.t}" value="${esc(b.v)}" placeholder="${b.t==='f'?'np. Następny przystanek':b.t==='n'?'np. 179':'np. Rondo Mogilskie'}" autocomplete="off">
+    ${b.t==='s'?`<label><input type="checkbox" data-kr="${i}" ${b.r?'checked':''}> na żądanie</label>`:''}
+    <button class="ib" data-ku="${i}" aria-label="W górę">↑</button><button class="ib" data-kx="${i}" aria-label="Usuń">✕</button></div>`).join('')}</div>
+  <div class="kbar"><button class="chip" id="kadd">+ Dodaj element</button></div>
+  <div class="kbar"><button class="chip on" id="kplay">▶ Odtwórz</button><button class="chip" id="kdl">⬇ Pobierz MP3</button><span class="sub" id="kst"></span></div>`;
+  bindTabs();
+  const re=()=>{kSave();creatorView()};
+  document.querySelectorAll('[data-kp]').forEach(b=>b.onclick=()=>{KSEQ=KPRESETS[b.dataset.kp]();re()});
+  document.querySelectorAll('[data-kt]').forEach(e=>e.onchange=()=>{const b=KSEQ[+e.dataset.kt];b.t=e.value;b.v='';b.r=0;re()});
+  document.querySelectorAll('[data-kv]').forEach(e=>{e.oninput=()=>{const b=KSEQ[+e.dataset.kv];b.v=e.value;kSave();e.closest('.kb').classList.toggle('bad',!!b.v&&!kRec(b))}});
+  document.querySelectorAll('[data-kr]').forEach(e=>e.onchange=()=>{KSEQ[+e.dataset.kr].r=e.checked?1:0;kSave()});
+  document.querySelectorAll('[data-kx]').forEach(e=>e.onclick=()=>{KSEQ.splice(+e.dataset.kx,1);re()});
+  document.querySelectorAll('[data-ku]').forEach(e=>e.onclick=()=>{const i=+e.dataset.ku;if(i>0){[KSEQ[i-1],KSEQ[i]]=[KSEQ[i],KSEQ[i-1]];re()}});
+  $('#kadd').onclick=()=>{KSEQ.push({t:'s',v:'',r:0});re()};
+  $('#kplay').onclick=()=>kRender(false);$('#kdl').onclick=()=>kRender(true);
+}
+let KAC=null,KSRC=null;
+async function kBuild(){
+  const st=$('#kst'),bad=KSEQ.filter(b=>!kRec(b));
+  if(!KSEQ.length){st.textContent='Dodaj co najmniej jeden element.';return null}
+  if(bad.length){st.textContent='Nie mam nagrania: '+bad.map(b=>b.v||'(puste pole)').join(', ');return null}
+  st.textContent='Składanie…';
+  KAC=KAC||new (window.AudioContext||window.webkitAudioContext)();
+  const bufs=[];for(const b of KSEQ)bufs.push(await KAC.decodeAudioData(await (await getBlob(kRec(b),'mp3')).arrayBuffer()));
+  const SR=KAC.sampleRate,gap=Math.round(0.06*SR),len=bufs.reduce((a,b)=>a+b.length,0)+gap*(bufs.length-1);
+  const out=KAC.createBuffer(1,len,SR),d=out.getChannelData(0);let o=0;
+  bufs.forEach((b,i)=>{const c=b.getChannelData(0);if(b.numberOfChannels>1){const c2=b.getChannelData(1);for(let j=0;j<c.length;j++)d[o+j]=(c[j]+c2[j])/2}else d.set(c,o);o+=b.length+gap});
+  return out;
+}
+async function kRender(save){
+  const st=$('#kst');
+  try{
+    const buf=await kBuild();if(!buf)return;
+    if(!save){if(KSRC)try{KSRC.stop()}catch(e){};await KAC.resume();KSRC=KAC.createBufferSource();KSRC.buffer=buf;KSRC.connect(KAC.destination);KSRC.start();st.textContent='';return}
+    if(!window.lamejs)await new Promise((r,j)=>{const x=document.createElement('script');x.src='lib/lame.min.js';x.onload=r;x.onerror=j;document.head.appendChild(x)});
+    st.textContent='Kodowanie MP3…';
+    const SR=buf.sampleRate,enc=new lamejs.Mp3Encoder(1,SR,128),f=buf.getChannelData(0),parts=[];
+    const pcm=new Int16Array(f.length);for(let i=0;i<f.length;i++){const v=Math.max(-1,Math.min(1,f[i]));pcm[i]=v<0?v*32768:v*32767}
+    for(let i=0;i<pcm.length;i+=1152){const m=enc.encodeBuffer(pcm.subarray(i,i+1152));if(m.length)parts.push(m)}
+    const e=enc.flush();if(e.length)parts.push(e);
+    const name=KSEQ.map(b=>b.t==='s'&&b.r?b.v+' NŻ':b.v).join(' ').trim()||'zapowiedz';
+    await saveFile(safe(name).slice(0,120)+'.mp3',new Blob(parts,{type:'audio/mpeg'}));
+    st.textContent='Zapisano.';
+  }catch(e){console.error(e);st.textContent='Błąd: '+(e&&e.message||e)}
+}
+
 // ---------- routing ----------
-function route(){const h=location.hash.slice(1); if(h==='przystanki') stopsView(); else if(h==='specjalne') specialView(); else if(h==='archiwum'||h==='archiwalne-linie') archiveView(); else if(h==='braki') missingView(); else if(h.startsWith('l-')) lineView(decodeURIComponent(h.slice(2))); else home()}
+function route(){const h=location.hash.slice(1); if(h==='przystanki') stopsView(); else if(h==='specjalne') specialView(); else if(h==='archiwum'||h==='archiwalne-linie') archiveView(); else if(h==='braki') missingView(); else if(h==='kreator') creatorView(); else if(h.startsWith('l-')) lineView(decodeURIComponent(h.slice(2))); else home()}
 window.addEventListener('hashchange',()=>{stop();route();scrollTo(0,0)});
 (async()=>{
   try{DATA=await (await fetch('data.json',{cache:'no-cache'})).json()}catch(e){$('#app').innerHTML='<p class="empty-note">Nie udało się wczytać danych.</p>';return}
