@@ -27,6 +27,8 @@ h1{font-size:30px;margin:0;line-height:1}
 .kb input[type=text],.kb select[data-ks]{flex:1;min-width:160px}.kb .n{color:var(--mute);min-width:22px;text-align:center}
 .kb label{color:var(--mute);font-size:14px;display:flex;gap:4px;align-items:center}.kb.bad{border-color:#c33}
 .kbar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.kf{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}.kf small{color:var(--mute);font-size:12px}.kf b{font-size:16px;padding:4px 0}.kf input[type=text]{width:100%;box-sizing:border-box}
+.kb .kopt{font-size:15px;color:var(--text);flex:1}
 .chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:9px 14px;font-size:14px;color:var(--mute)}
 .chip.on{background:var(--led);color:#1a1200;border-color:var(--led);font-weight:600}
 .group h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--mute);margin:20px 0 8px;font-weight:600}
@@ -410,9 +412,14 @@ function missingView(){
 
 // ---------- creator: build your own announcement from phrases, line numbers and stop names ----------
 const KTYPES=[['f','Fraza'],['n','Numer linii'],['s','Przystanek']];
-let KSEQ=null;
-function kLoad(){if(KSEQ)return;try{KSEQ=JSON.parse(localStorage.getItem('kreator'))}catch(e){}if(!Array.isArray(KSEQ))KSEQ=[{t:'f',v:'Następny przystanek'},{t:'s',v:'',r:0}]}
-function kSave(){try{localStorage.setItem('kreator',JSON.stringify(KSEQ))}catch(e){}}
+let KSEQ=null,KMODE='';
+function kLoad(){if(KSEQ)return;try{KSEQ=JSON.parse(localStorage.getItem('kreator'))}catch(e){}if(!Array.isArray(KSEQ))KSEQ=[{t:'f',v:'Następny przystanek'},{t:'s',v:'',r:0}];try{KMODE=localStorage.getItem('kreatorTryb')||''}catch(e){}}
+function kSave(){try{localStorage.setItem('kreator',JSON.stringify(KSEQ));localStorage.setItem('kreatorTryb',KMODE)}catch(e){}}
+// line-announcement mode: fixed layout Linia → number → Kierunek → stop, optional "Trasa zmieniona" at the end
+function kLinFix(){
+  const n=KSEQ.find(b=>b.t==='n'),s=KSEQ.find(b=>b.t==='s'),tz=KSEQ.some(b=>b.t==='f'&&b.v==='Trasa zmieniona');
+  KSEQ=[{t:'f',v:'Linia'},{t:'n',v:n?n.v:''},{t:'f',v:'Kierunek'},{t:'s',v:s?s.v:'',r:s?s.r:0}];
+  if(tz)KSEQ.push({t:'f',v:'Trasa zmieniona'})}
 function kNums(){const a=Object.keys(DATA.nums||{});Object.keys(DATA.archive||{}).filter(isLineIntro).forEach(k=>{const n=k.slice(6);if(!a.includes(n))a.push(n)});return a.sort(numSort)}
 function kStops(){return [...new Set(Object.keys(DATA.stops).concat(Object.keys(archStops())))].sort((a,b)=>a.localeCompare(b,'pl'))}
 function kRec(b){
@@ -427,27 +434,34 @@ const KPRESETS={
 async function creatorView(){
   document.title='Kreator zapowiedzi';
   if(!SPECIAL){try{SPECIAL=await (await fetch('special/list.json',{cache:'no-cache'})).json()}catch(e){SPECIAL=[]}}
-  kLoad();
+  kLoad();if(KMODE==='linia')kLinFix();
   const opts=t=>KTYPES.map(([k,n])=>`<option value="${k}" ${k===t?'selected':''}>${n}</option>`).join('');
   $('#app').innerHTML=`
   <header class="top"><div><h1><span class="led">ZAPOWIEDZI</span></h1><div class="sub">Kreator – złóż własną zapowiedź</div></div></header>
   ${tabsHTML('kreator')}
   <p class="empty-note">Wybierz gotowy układ albo dodawaj elementy po kolei. Przystanki i numery linii obejmują też archiwum.</p>
-  <div class="kbar">${Object.keys(KPRESETS).map(k=>`<button class="chip" data-kp="${esc(k)}">${esc(k)}</button>`).join('')}</div>
+  <div class="kbar">${Object.keys(KPRESETS).map(k=>`<button class="chip ${(k==='Zapowiedź liniowa')===(KMODE==='linia')&&KMODE==='linia'?'on':''}" data-kp="${esc(k)}">${esc(k)}</button>`).join('')}</div>
   <datalist id="kdf">${(SPECIAL||[]).map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist>
   <datalist id="kdn">${kNums().map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
   <datalist id="kds">${kStops().map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
-  <div id="kl">${KSEQ.map((b,i)=>`<div class="kb ${b.v&&!kRec(b)?'bad':''}" data-k="${i}"><span class="n">${i+1}</span>
+  ${KMODE==='linia'?`<div id="kl">
+    <div class="kb"><span class="n">1</span><div class="kf"><small>Fraza</small><b>Linia</b></div></div>
+    <div class="kb ${KSEQ[1].v&&!kRec(KSEQ[1])?'bad':''}"><span class="n">2</span><div class="kf"><small>Numer linii</small><input type="text" data-kv="1" list="kdn" value="${esc(KSEQ[1].v)}" placeholder="np. 179" inputmode="numeric" autocomplete="off"></div></div>
+    <div class="kb"><span class="n">3</span><div class="kf"><small>Fraza</small><b>Kierunek</b></div></div>
+    <div class="kb ${KSEQ[3].v&&!kRec(KSEQ[3])?'bad':''}"><span class="n">4</span><div class="kf"><small>Przystanek docelowy</small><input type="text" data-kv="3" list="kds" value="${esc(KSEQ[3].v)}" placeholder="Wybierz z listy przystanków" autocomplete="off"></div><label><input type="checkbox" data-kr="3" ${KSEQ[3].r?'checked':''}> na żądanie</label></div>
+    <div class="kb"><span class="n">5</span><label class="kopt"><input type="checkbox" id="ktz" ${KSEQ[4]?'checked':''}> Trasa zmieniona <span class="sub">(opcjonalnie)</span></label></div>
+  </div>`:`  <div id="kl">${KSEQ.map((b,i)=>`<div class="kb ${b.v&&!kRec(b)?'bad':''}" data-k="${i}"><span class="n">${i+1}</span>
     <select data-kt="${i}">${opts(b.t)}</select>
     ${b.t==='f'?`<select data-kv="${i}" data-ks="1">${(b.v?'':'<option value="" selected>– wybierz frazę –</option>')+(SPECIAL||[]).map(x=>`<option value="${esc(x.name)}" ${x.name===b.v?'selected':''}>${esc(x.name)}</option>`).join('')}</select>`
       :`<input type="text" data-kv="${i}" list="kd${b.t}" value="${esc(b.v)}" placeholder="${b.t==='n'?'np. 179':'np. Rondo Mogilskie'}" autocomplete="off">`}
     ${b.t==='s'?`<label><input type="checkbox" data-kr="${i}" ${b.r?'checked':''}> na żądanie</label>`:''}
     <button class="ib" data-ku="${i}" aria-label="W górę">↑</button><button class="ib" data-kx="${i}" aria-label="Usuń">✕</button></div>`).join('')}</div>
-  <div class="kbar"><button class="chip" data-ka="f">+ Fraza (np. Linia, Kierunek)</button><button class="chip" data-ka="n">+ Numer linii</button><button class="chip" data-ka="s">+ Przystanek</button></div>
+  <div class="kbar"><button class="chip" data-ka="f">+ Fraza (np. Linia, Kierunek)</button><button class="chip" data-ka="n">+ Numer linii</button><button class="chip" data-ka="s">+ Przystanek</button></div>`}
   <div class="kbar"><button class="chip on" id="kplay">▶ Odtwórz</button><button class="chip" id="kdl">⬇ Pobierz MP3</button><span class="sub" id="kst"></span></div>`;
   bindTabs();
   const re=()=>{kSave();creatorView()};
-  document.querySelectorAll('[data-kp]').forEach(b=>b.onclick=()=>{KSEQ=KPRESETS[b.dataset.kp]();re()});
+  document.querySelectorAll('[data-kp]').forEach(b=>b.onclick=()=>{KMODE=b.dataset.kp==='Zapowiedź liniowa'?'linia':'';KSEQ=KPRESETS[b.dataset.kp]();re()});
+  const tz=$('#ktz');if(tz)tz.onchange=()=>{KSEQ.length=4;if(tz.checked)KSEQ.push({t:'f',v:'Trasa zmieniona'});kSave()};
   document.querySelectorAll('[data-kt]').forEach(e=>e.onchange=()=>{const b=KSEQ[+e.dataset.kt];b.t=e.value;b.v='';b.r=0;re()});
   document.querySelectorAll('[data-kv]').forEach(e=>{e.onchange=e.oninput=()=>{const b=KSEQ[+e.dataset.kv];b.v=e.value;kSave();e.closest('.kb').classList.toggle('bad',!!b.v&&!kRec(b))}});
   document.querySelectorAll('[data-kr]').forEach(e=>e.onchange=()=>{KSEQ[+e.dataset.kr].r=e.checked?1:0;kSave()});
