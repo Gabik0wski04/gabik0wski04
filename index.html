@@ -414,7 +414,7 @@ function missingView(){
 // ---------- creator: build your own announcement from phrases, line numbers and stop names ----------
 const KTYPES=[['f','Fraza'],['n','Numer linii'],['s','Przystanek']];
 let KSEQ=null,KMODE='';
-function kLoad(){if(KSEQ)return;try{KSEQ=JSON.parse(localStorage.getItem('kreator'))}catch(e){}if(!Array.isArray(KSEQ))KSEQ=[{t:'f',v:'Następny przystanek'},{t:'s',v:'',r:0}];try{const t=localStorage.getItem('kreatorTryb');KMODE=t===null?'przyst':t}catch(e){KMODE='przyst'}}
+function kLoad(){if(KSEQ)return;try{KSEQ=JSON.parse(localStorage.getItem('kreator'))}catch(e){}/* one-time reset after the Kierunek versions were swapped: default back to plain 'Kierunek' */try{if(localStorage.getItem('kreatorV')!=='2'){if(Array.isArray(KSEQ))KSEQ.forEach(b=>{if(b.t==='f'&&b.v==='Kierunek (stara wersja)')b.v='Kierunek'});localStorage.setItem('kreatorV','2')}}catch(e){}if(!Array.isArray(KSEQ))KSEQ=[{t:'f',v:'Następny przystanek'},{t:'s',v:'',r:0}];try{const t=localStorage.getItem('kreatorTryb');KMODE=t===null?'przyst':t}catch(e){KMODE='przyst'}}
 function kSave(){try{localStorage.setItem('kreator',JSON.stringify(KSEQ));localStorage.setItem('kreatorTryb',KMODE)}catch(e){}}
 // line-announcement mode: fixed layout Linia → number → Kierunek → stop, optional "Trasa zmieniona" at the end
 // stop mode: opening phrase → stop name → optional extra message (zones, end of route…)
