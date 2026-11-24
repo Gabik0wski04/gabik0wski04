@@ -24,7 +24,7 @@ h1{font-size:30px;margin:0;line-height:1}
 .search input:focus{border-color:var(--led)}
 .kb{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px;margin:8px 0}
 .kb select,.kb input[type=text]{background:var(--bg,#0b0e13);border:1px solid var(--line);border-radius:10px;padding:9px 10px;color:var(--text);font-size:15px}
-.kb input[type=text]{flex:1;min-width:160px}.kb .n{color:var(--mute);min-width:22px;text-align:center}
+.kb input[type=text],.kb select[data-ks]{flex:1;min-width:160px}.kb .n{color:var(--mute);min-width:22px;text-align:center}
 .kb label{color:var(--mute);font-size:14px;display:flex;gap:4px;align-items:center}.kb.bad{border-color:#c33}
 .kbar{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:9px 14px;font-size:14px;color:var(--mute)}
@@ -439,20 +439,21 @@ async function creatorView(){
   <datalist id="kds">${kStops().map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
   <div id="kl">${KSEQ.map((b,i)=>`<div class="kb ${b.v&&!kRec(b)?'bad':''}" data-k="${i}"><span class="n">${i+1}</span>
     <select data-kt="${i}">${opts(b.t)}</select>
-    <input type="text" data-kv="${i}" list="kd${b.t}" value="${esc(b.v)}" placeholder="${b.t==='f'?'np. Następny przystanek':b.t==='n'?'np. 179':'np. Rondo Mogilskie'}" autocomplete="off">
+    ${b.t==='f'?`<select data-kv="${i}" data-ks="1">${(b.v?'':'<option value="" selected>– wybierz frazę –</option>')+(SPECIAL||[]).map(x=>`<option value="${esc(x.name)}" ${x.name===b.v?'selected':''}>${esc(x.name)}</option>`).join('')}</select>`
+      :`<input type="text" data-kv="${i}" list="kd${b.t}" value="${esc(b.v)}" placeholder="${b.t==='n'?'np. 179':'np. Rondo Mogilskie'}" autocomplete="off">`}
     ${b.t==='s'?`<label><input type="checkbox" data-kr="${i}" ${b.r?'checked':''}> na żądanie</label>`:''}
     <button class="ib" data-ku="${i}" aria-label="W górę">↑</button><button class="ib" data-kx="${i}" aria-label="Usuń">✕</button></div>`).join('')}</div>
-  <div class="kbar"><button class="chip" id="kadd">+ Dodaj element</button></div>
+  <div class="kbar"><button class="chip" data-ka="f">+ Fraza (np. Linia, Kierunek)</button><button class="chip" data-ka="n">+ Numer linii</button><button class="chip" data-ka="s">+ Przystanek</button></div>
   <div class="kbar"><button class="chip on" id="kplay">▶ Odtwórz</button><button class="chip" id="kdl">⬇ Pobierz MP3</button><span class="sub" id="kst"></span></div>`;
   bindTabs();
   const re=()=>{kSave();creatorView()};
   document.querySelectorAll('[data-kp]').forEach(b=>b.onclick=()=>{KSEQ=KPRESETS[b.dataset.kp]();re()});
   document.querySelectorAll('[data-kt]').forEach(e=>e.onchange=()=>{const b=KSEQ[+e.dataset.kt];b.t=e.value;b.v='';b.r=0;re()});
-  document.querySelectorAll('[data-kv]').forEach(e=>{e.oninput=()=>{const b=KSEQ[+e.dataset.kv];b.v=e.value;kSave();e.closest('.kb').classList.toggle('bad',!!b.v&&!kRec(b))}});
+  document.querySelectorAll('[data-kv]').forEach(e=>{e.onchange=e.oninput=()=>{const b=KSEQ[+e.dataset.kv];b.v=e.value;kSave();e.closest('.kb').classList.toggle('bad',!!b.v&&!kRec(b))}});
   document.querySelectorAll('[data-kr]').forEach(e=>e.onchange=()=>{KSEQ[+e.dataset.kr].r=e.checked?1:0;kSave()});
   document.querySelectorAll('[data-kx]').forEach(e=>e.onclick=()=>{KSEQ.splice(+e.dataset.kx,1);re()});
   document.querySelectorAll('[data-ku]').forEach(e=>e.onclick=()=>{const i=+e.dataset.ku;if(i>0){[KSEQ[i-1],KSEQ[i]]=[KSEQ[i],KSEQ[i-1]];re()}});
-  $('#kadd').onclick=()=>{KSEQ.push({t:'s',v:'',r:0});re()};
+  document.querySelectorAll('[data-ka]').forEach(e=>e.onclick=()=>{KSEQ.push({t:e.dataset.ka,v:'',r:0});re()});
   $('#kplay').onclick=()=>kRender(false);$('#kdl').onclick=()=>kRender(true);
 }
 let KAC=null,KSRC=null;
