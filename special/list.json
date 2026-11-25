@@ -74,5 +74,33 @@
 {
 "name": "Granica miasta, druga strefa aglomeracyjna",
 "f": "special/granica-miasta-druga-strefa-aglomeracyjna.mp3"
+},
+{
+"name": "Proszę przygotować bilety do kontroli",
+"f": "special/prosze-przygotowac-bilety-do-kontroli.mp3"
+},
+{
+"name": "Uwaga! Awaria. Proszę opuścić pojazd",
+"f": "special/uwaga-awaria-prosze-opuscic-pojazd.mp3"
+},
+{
+"name": "Uwaga! Włączona klimatyzacja. Proszę zamknąć okna",
+"f": "special/uwaga-wlaczona-klimatyzacja-prosze-zamknac-okna.mp3"
+},
+{
+"name": "Koniec trasy. Proszę opuścić pojazd. Dziękujemy za wybór komunikacji miejskiej w Krakowie",
+"f": "special/koniec-trasy-prosze-opuscic-pojazd-dziekujemy-za-wybor-komunikacji-mie.mp3"
+},
+{
+"name": "Uwaga! Zatrzymanie w ruchu. Proszę opuścić pojazd",
+"f": "special/uwaga-zatrzymanie-w-ruchu-prosze-opuscic-pojazd.mp3"
+},
+{
+"name": "Uwaga! Zmiana trasy",
+"f": "special/uwaga-zmiana-trasy.mp3"
+},
+{
+"name": "Uwaga! Proszę odsunąć się od drzwi",
+"f": "special/uwaga-prosze-odsunac-sie-od-drzwi.mp3"
 }
 ]
