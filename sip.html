@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SIP boczny</title>
+<link rel="stylesheet" href="lib/maplibre-gl.css">
+<style>
+@font-face{font-family:Oswald;font-weight:400;src:url(lib/oswald/oswald-latin-ext-400-normal.woff2) format('woff2');unicode-range:U+0100-024F,U+1E00-1EFF}
+@font-face{font-family:Oswald;font-weight:400;src:url(lib/oswald/oswald-latin-400-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F}
+@font-face{font-family:Oswald;font-weight:500;src:url(lib/oswald/oswald-latin-ext-500-normal.woff2) format('woff2');unicode-range:U+0100-024F,U+1E00-1EFF}
+@font-face{font-family:Oswald;font-weight:500;src:url(lib/oswald/oswald-latin-500-normal.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F}
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+#fit{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+/* the panel is drawn at 2128 x 630 and scaled to the window */
+#sip{position:relative;width:2128px;height:630px;flex:none;transform-origin:center;overflow:hidden;
+  background:linear-gradient(180deg,#7f8aac 0%,#6371a0 35%,#4d5d8a 70%,#47578a 100%);font-family:Oswald,"Bebas Neue","Arial Narrow",Arial,sans-serif;color:#fff}
+#time{position:absolute;right:860px;top:42px;font-size:84px;line-height:84px;color:#23307d;font-weight:500;letter-spacing:1px}
+#date{position:absolute;right:860px;top:122px;font-size:36px;line-height:40px;color:#23307d}
+#map{position:absolute;left:1349px;top:28px;width:763px;height:245px;background:#e8e4dc;box-shadow:0 3px 8px rgba(0,0,0,.35)}
+#map .maplibregl-ctrl-attrib{font-size:9px}
+#dot{position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;background:#f00;z-index:5;pointer-events:none}
+#dest{position:absolute;left:44px;top:368px;font-size:48px;line-height:58px;text-transform:uppercase;font-weight:400}
+#line{position:absolute;right:30px;top:340px;font-size:156px;line-height:170px;font-weight:500}
+#bar{position:absolute;left:0;top:0;width:2128px;height:630px;pointer-events:none}
+.st{position:absolute;bottom:0;transform-origin:0 100%;transform:rotate(-45deg);white-space:nowrap;font-size:30px;line-height:31px;text-transform:uppercase;transition:color .6s,opacity .6s}
+.st .l2{padding-left:24px}
+.st.nz{color:#f6a51b}.st.past{color:#aeb7d3;opacity:.45}
+.lab{position:absolute;width:0;height:0}
+.dt{position:absolute;width:52px;height:22px;margin:-11px 0 0 -26px;border-radius:50%;background:#fff;box-shadow:0 2px 2px rgba(0,0,0,.35)}
+#veh{position:absolute;width:46px;height:46px;margin:-30px 0 0 -23px;border-radius:50%;background:radial-gradient(circle at 50% 40%,#5679ea,#2a4bc0 70%);box-shadow:0 0 0 3px #e9eefc,0 3px 6px rgba(0,0,0,.5);transition:left 1.2s ease-in-out;z-index:4}
+#veh:after{content:"";position:absolute;left:14px;top:12px;width:18px;height:18px;border-radius:50%;background:#f2f4fb;box-shadow:inset 0 0 0 5px #c9342f}
+#idle{position:absolute;left:44px;top:390px;font-size:40px;color:#dfe4f3;opacity:.8}
+</style>
+</head>
+<body>
+<div id="fit"><div id="sip">
+  <div id="time"></div><div id="date"></div>
+  <div id="map"><div id="dot"></div></div>
+  <div id="dest"></div><div id="line"></div>
+  <svg id="bar" viewBox="0 0 2128 630">
+    <!-- 3D arrow pointing to the terminus on the left -->
+    <polygon points="140,497 2050,497 2082,520 2082,540 140,540 140,578 34,532 34,515 140,492" fill="#2c4166"/>
+    <polygon points="140,509 2080,509 2080,545 140,545 140,578 34,520" fill="#26395c"/>
+    <polygon points="34,520 140,545 2080,545 2080,562 140,562 140,578" fill="#1a2944"/>
+  </svg>
+  <div id="stops"></div>
+  <div id="veh" style="display:none"></div>
+  <div id="idle">Wybierz kurs na sterowniku</div>
+</div></div>
+<script src="lib/maplibre-gl.js"></script>
+<script>
+'use strict';
+const $=s=>document.querySelector(s);
+const pad=n=>String(n).padStart(2,'0');
+const DAYS=['niedziela','poniedziałek','wtorek','środa','czwartek','piątek','sobota'];
+const MON=['stycznia','lutego','marca','kwietnia','maja','czerwca','lipca','sierpnia','września','października','listopada','grudnia'];
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function fit(){const s=Math.min(innerWidth/2128,innerHeight/630);$('#sip').style.transform=`scale(${s})`}
+addEventListener('resize',fit);fit();
+function clock(){const d=new Date();$('#time').textContent=`${d.getHours()}:${pad(d.getMinutes())}`;$('#date').textContent=`${DAYS[d.getDay()]}, ${d.getDate()} ${MON[d.getMonth()]}`}
+setInterval(clock,1000);clock();
+
+// ---------- map of the current stop ----------
+let XY={},MAP=null;
+fetch('zp/stops_xy.json').then(r=>r.json()).then(d=>{XY=d;if(STATE)draw()}).catch(()=>{});
+function mapTo(name){
+  const p=XY[name];if(!p)return;
+  if(!MAP){MAP=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/liberty',center:[p[1],p[0]],zoom:15.2,interactive:false,attributionControl:{compact:true}});return}
+  MAP.easeTo({center:[p[1],p[0]],duration:1200});
+}
+
+// ---------- stop line: 14 places, the bus moves from right to left towards the terminus ----------
+const N=14,X0=372,DX=110.3,Y=522;
+const slotX=j=>X0+j*DX;           // j = 0 is the leftmost place (towards the terminus)
+let STATE=null,W0=0;
+function split(n,req){
+  const w=n.toUpperCase().split(' '),tail=req?' (N/Ż)':'';
+  if(w.length<2||n.length<=11)return [w.join(' ')+tail];
+  return [w[0],w.slice(1).join(' ')+tail];
+}
+function draw(){
+  const S=STATE;
+  if(!S||!S.stops||!S.stops.length){$('#stops').innerHTML='';$('#veh').style.display='none';$('#idle').style.display='';$('#dest').innerHTML='';$('#line').textContent='';return}
+  $('#idle').style.display='none';
+  const n=S.stops.length,cur=Math.max(0,Math.min(n-1,S.cur));
+  // paging: a new page when the bus passes the middle, keeping two passed stops on the right
+  if(cur<W0||cur-W0>=8)W0=cur-2;
+  W0=Math.max(0,Math.min(W0,n-N));
+  const shown=Math.min(N,n),firstSlot=shown-1;   // slot of stop W0 (rightmost used place)
+  const slotOf=i=>firstSlot-(i-W0);
+  const d=S.dest.toUpperCase().split(' ');
+  $('#dest').innerHTML=d.length>1?esc(d[0])+'<br>'+esc(d.slice(1).join(' ')):esc(d[0]);
+  $('#line').textContent=S.line;
+  let h='';
+  for(let i=W0;i<W0+shown;i++){
+    const j=slotOf(i),x=slotX(j),st=S.stops[i],lines=split(st[0],st[1]);
+    h+=`<div class="dt" style="left:${x}px;top:${Y}px"></div>`;
+    h+=`<div class="lab" style="left:${x-6}px;top:${Y-46}px"><div class="st ${i<cur?'past':st[1]?'nz':''}">${lines.map((l,k)=>`<div class="${k?'l2':''}">${esc(l)}</div>`).join('')}</div></div>`;
+  }
+  $('#stops').innerHTML=h;
+  const v=$('#veh');v.style.display='';v.style.left=slotX(slotOf(cur))+'px';v.style.top=Y+'px';
+  mapTo(S.stops[cur][0]);
+}
+// state comes from the driver console (same page in a frame, or another window)
+const BC='BroadcastChannel' in window?new BroadcastChannel('sip'):null;
+if(BC){BC.onmessage=e=>{STATE=e.data;draw()};BC.postMessage({hello:1})}
+addEventListener('message',e=>{if(e.data&&e.data.sip){STATE=e.data.sip;draw()}});
+try{const s=JSON.parse(localStorage.getItem('sipState'));if(s){STATE=s;draw()}}catch(e){}
+</script>
+</body>
+</html>

@@ -6,7 +6,10 @@
 <title>Symulator sterownika</title>
 <style>
 html,body{margin:0;height:100%;background:#1b1d21;overflow:hidden;font-family:"Century Gothic","Futura","Avenir Next","Segoe UI",Arial,sans-serif;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
-#wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+#wrap{position:absolute;left:0;right:0;bottom:0;top:var(--siph,0px);display:flex;align-items:center;justify-content:center}
+#sipf{position:absolute;left:50%;top:0;transform:translateX(-50%);border:0;display:block;background:#000}
+#sipbar{position:fixed;right:8px;bottom:4px;font:12px Arial,sans-serif;display:flex;gap:6px;z-index:5}
+#sipbar button{background:#2a2e35;color:#c9ced6;border:1px solid #444a53;border-radius:6px;padding:3px 8px;cursor:pointer}
 /* device housing: light grey console, deep rounded bezel around the display */
 #dev{position:relative;width:1270px;height:880px;transform-origin:center}
 #bez{position:absolute;left:182px;top:104px;width:876px;height:672px;border-radius:44px;background:linear-gradient(180deg,#b8bcc0,#cfd2d5 25%,#d5d8da);box-shadow:inset 0 8px 10px rgba(0,0,0,.30),inset 4px 0 6px rgba(0,0,0,.12),inset 0 -2px 2px rgba(255,255,255,.7)}
@@ -63,6 +66,8 @@ html,body{margin:0;height:100%;background:#1b1d21;overflow:hidden;font-family:"C
 </style>
 </head>
 <body>
+<iframe id="sipf" src="sip.html" title="SIP boczny"></iframe>
+<div id="sipbar"><button id="siptg">SIP: ukryj</button><button id="sipwin">SIP w osobnym oknie ↗</button></div>
 <div id="wrap"><div id="dev">
   <div id="plate"></div>
   <div class="mnt" style="left:31px;top:154px"></div><div class="mnt" style="left:1215px;top:25px"></div><div class="mnt" style="left:1195px;top:739px"></div><div class="mnt" style="left:31px;top:800px"></div>
@@ -82,7 +87,7 @@ html,body{margin:0;height:100%;background:#1b1d21;overflow:hidden;font-family:"C
     <svg id="spin" viewBox="0 0 46 52"><path d="M6 2h34v4c0 9-9 14-12 20 3 6 12 11 12 20v4H6v-4c0-9 9-14 12-20C15 20 6 15 6 6z" fill="#2a1418" stroke="#e2334a" stroke-width="3"/><path d="M14 44c3-6 6-8 9-10 3 2 6 4 9 10z" fill="#e2334a"/></svg>
   </div>
 </div></div>
-<div id="note">Symulator sterownika (wersja 8) – dane z rozkładu GTFS, zapowiedzi z bazy. <a href="./">← wróć do zapowiedzi</a></div>
+<div id="note" style="right:auto;left:8px;text-align:left">Symulator sterownika (wersja 9) – dane z rozkładu GTFS, zapowiedzi z bazy. <a href="./">← wróć do zapowiedzi</a></div>
 <script>
 'use strict';
 const $=s=>document.querySelector(s);
@@ -92,7 +97,12 @@ const hm=m=>{m=((m%1440)+1440)%1440;return pad(Math.floor(m/60))+':'+pad(m%60)};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 // ---------- scale the console to the window ----------
-function fit(){const s=Math.min(innerWidth/1270,(innerHeight-20)/880);$('#dev').style.transform=`scale(${s})`}
+let SIPON=true;try{SIPON=localStorage.getItem('sipOn')!=='0'}catch(e){}
+function fit(){
+  const f=document.getElementById('sipf');let sh=0;
+  if(SIPON){const w=Math.min(innerWidth,innerHeight*1.6);sh=Math.round(w*630/2128);f.style.width=w+'px';f.style.height=sh+'px';f.style.display='block'}else f.style.display='none';
+  document.documentElement.style.setProperty('--siph',sh+'px');
+  const s=Math.min(innerWidth/1270,(innerHeight-sh-20)/880);$('#dev').style.transform=`scale(${s})`}
 addEventListener('resize',fit);fit();
 
 // ---------- sounds: key click and stop announcements ----------
@@ -222,6 +232,24 @@ function liveUpdate(){
   }
   $('#dl').innerHTML='<div style="height:8px"></div>'+rows.join('');
 }
+// ---------- side passenger display (SIP): gets the current trip and stop ----------
+const SIPBC='BroadcastChannel' in window?new BroadcastChannel('sip'):null;
+let SIPLAST='';
+function sipState(){
+  const t=(S.view==='start'||S.view==='kurs')&&S.trip;
+  if(!t)return {stops:[]};
+  return {line:t.l,dest:t.s[t.s.length-1][1],stops:t.s.map(x=>[x[1],x[2]]),cur:S.view==='start'?S.cur:0};
+}
+function sipPush(force){
+  const st=sipState(),js=JSON.stringify(st);if(!force&&js===SIPLAST)return;SIPLAST=js;
+  try{localStorage.setItem('sipState',js)}catch(e){}
+  if(SIPBC)SIPBC.postMessage(st);
+}
+if(SIPBC)SIPBC.onmessage=e=>{if(e.data&&e.data.hello)sipPush(true)};
+setInterval(()=>sipPush(false),300);
+document.getElementById('siptg').onclick=()=>{SIPON=!SIPON;try{localStorage.setItem('sipOn',SIPON?'1':'0')}catch(e){}document.getElementById('siptg').textContent=SIPON?'SIP: ukryj':'SIP: pokaż';fit()};
+document.getElementById('siptg').textContent=SIPON?'SIP: ukryj':'SIP: pokaż';
+document.getElementById('sipwin').onclick=()=>window.open('sip.html','sip','width=1280,height=380');
 // ---------- input ----------
 function bind(){
   document.querySelectorAll('[data-a]').forEach(e=>e.onpointerdown=ev=>{ev.preventDefault();klik();e.classList.add('pr');setTimeout(()=>e.classList.remove('pr'),120);act(e.dataset.a)});
