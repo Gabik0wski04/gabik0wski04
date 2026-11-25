@@ -82,7 +82,7 @@ html,body{margin:0;height:100%;background:#1b1d21;overflow:hidden;font-family:"C
     <svg id="spin" viewBox="0 0 46 52"><path d="M6 2h34v4c0 9-9 14-12 20 3 6 12 11 12 20v4H6v-4c0-9 9-14 12-20C15 20 6 15 6 6z" fill="#2a1418" stroke="#e2334a" stroke-width="3"/><path d="M14 44c3-6 6-8 9-10 3 2 6 4 9 10z" fill="#e2334a"/></svg>
   </div>
 </div></div>
-<div id="note">Symulator sterownika (wersja 7) – dane z rozkładu GTFS, zapowiedzi z bazy. <a href="./">← wróć do zapowiedzi</a></div>
+<div id="note">Symulator sterownika (wersja 8) – dane z rozkładu GTFS, zapowiedzi z bazy. <a href="./">← wróć do zapowiedzi</a></div>
 <script>
 'use strict';
 const $=s=>document.querySelector(s);
@@ -197,7 +197,7 @@ function wizard(){
       B('wczesn',544,160,90,70,'wcześn.<br>kurs','font-size:16px')+B('neg',640,160,92,70,S.neg?'negatyw<br>wł.':'negatyw<br>wył.','font-size:16px')+
       `<div class="panel list" id="dl" style="left:52px;top:250px;width:696px;height:196px"></div>`+
       B('ddown',78,461,60,58,ICON.down)+B('dup',144,461,60,58,ICON.up)+B('zablokuj',414,461,82,58,ICON.lock+'<span style="margin-top:3px">zablokuj</span>','font-size:15px')+B('brak',502,461,84,58,'brak<br>trasy','font-size:15px')+
-      B('start',660,461,66,58,'start',S.started?'color:#fff;background:linear-gradient(#a52a3e,#7c1c2c)':'color:#e2334a;border-color:#8a3a46');
+      B('start',660,461,66,58,'start','color:#e2334a;border-color:#8a3a46');
   }
   b.innerHTML=h;
   if(v==='start')liveUpdate();
@@ -247,8 +247,8 @@ async function act(a){
     if(a==='next'||a==='tstart'){S.cur=0;S.started=false;S.view='start';S.tabs=true;await spinner(400);render();setTimeout(()=>{if(S.view==='start'){S.tabs=false;render()}},1200);return}
   }
   if(v==='start'){
-    if(a==='start'){S.started=true;announce(S.trip.s[S.cur][1],S.trip.s[S.cur][2]);return render()}   // begins the trip: announces the selected stop
-    if(a==='ddown'&&S.cur<S.trip.s.length-1){S.cur++;if(S.started)announce(S.trip.s[S.cur][1],S.trip.s[S.cur][2]);return liveUpdate()}
+    if(a==='start'){announce(S.trip.s[S.cur][1],S.trip.s[S.cur][2]);return}   // a single press: announces the selected stop
+    if(a==='ddown'&&S.cur<S.trip.s.length-1){S.cur++;return liveUpdate()}           // scrolling only beeps
     if(a==='dup'&&S.cur>0){S.cur--;return liveUpdate()}
     if(a==='neg'){S.neg=!S.neg;return render()}
     if(a==='wczesn'&&S.kSel>0){S.kSel--;S.trip=S.duty.t[S.kSel];S.cur=0;return render()}
