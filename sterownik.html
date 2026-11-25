@@ -8,13 +8,16 @@
 html,body{margin:0;height:100%;background:#1b1d21;overflow:hidden;font-family:"Century Gothic","Futura","Avenir Next","Segoe UI",Arial,sans-serif;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
 #wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
 /* device housing: light grey console, deep rounded bezel around the display */
-#dev{position:relative;width:1060px;height:790px;background:linear-gradient(175deg,#d7dadc,#c9cccf 45%,#bfc2c5);border-radius:30px 30px 34px 34px;box-shadow:inset 0 2px 0 #f0f1f2,inset 0 -4px 5px rgba(0,0,0,.16),0 20px 50px rgba(0,0,0,.6);transform-origin:center}
-#bez{position:absolute;left:103px;top:51px;width:865px;height:663px;border-radius:54px;background:linear-gradient(180deg,#c4c7ca,#d3d6d8 30%,#d8dadc);box-shadow:inset 0 7px 9px rgba(0,0,0,.30),inset 0 -2px 2px rgba(255,255,255,.7),0 1px 0 #eef0f1}
-#scr{position:absolute;left:150px;top:90px;width:800px;height:600px;background:#1a2433;overflow:hidden;border-radius:4px;box-shadow:0 0 0 5px #24272b,0 0 0 8px #9fa3a7,0 2px 6px 8px rgba(0,0,0,.25);color:#d7dbe0}
+#dev{position:relative;width:1270px;height:880px;transform-origin:center}
+#bez{position:absolute;left:182px;top:104px;width:876px;height:672px;border-radius:44px;background:linear-gradient(180deg,#b8bcc0,#cfd2d5 25%,#d5d8da);box-shadow:inset 0 8px 10px rgba(0,0,0,.30),inset 4px 0 6px rgba(0,0,0,.12),inset 0 -2px 2px rgba(255,255,255,.7)}
+#scr{position:absolute;left:220px;top:140px;width:800px;height:600px;background:#1a2433;overflow:hidden;border-radius:4px;box-shadow:0 0 0 5px #23262a,0 0 0 8px #9da1a5;color:#d7dbe0}
+#plate{position:absolute;left:9px;top:6px;width:1252px;height:868px;border-radius:22px;background:linear-gradient(180deg,#c4c8cc,#b6babe);box-shadow:inset 0 2px 0 #e2e4e6,inset 0 -3px 3px rgba(0,0,0,.2),0 18px 40px rgba(0,0,0,.6)}
+#body2{position:absolute;left:54px;top:59px;width:1132px;height:797px;border-radius:26px;background:linear-gradient(180deg,#e3e5e7 0,#d0d3d6 5%,#c8cbce 40%,#c2c5c8);box-shadow:0 -2px 0 #eef0f1,0 3px 4px rgba(0,0,0,.25),inset 0 -2px 3px rgba(0,0,0,.12)}
+.mnt{position:absolute;width:26px;height:26px;border-radius:50%;background:radial-gradient(circle,#2b2e32 30%,#5d6165 32%,#9ea2a6 60%,#c3c6c9 70%);box-shadow:inset 0 1px 2px rgba(0,0,0,.4)}
 .dot{position:absolute;width:13px;height:13px;border-radius:50%;background:#26292d;box-shadow:inset 0 1px 2px #000,0 1px 0 #e2e4e6}
 .screw{position:absolute;width:22px;height:22px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#f1f2f3,#9a9ea2 70%);box-shadow:0 1px 2px #555}
-.usb{position:absolute;left:946px;top:618px;width:64px;height:60px;border-radius:5px;background:linear-gradient(#b6babe,#9b9fa3);box-shadow:inset 0 0 0 3px #84888c,0 1px 2px rgba(0,0,0,.3)}
-.usb:after{content:"";position:absolute;left:14px;top:9px;width:36px;height:42px;background:#2a2d31;border-radius:3px;box-shadow:inset 0 0 0 5px #6b6f73}
+.usb{position:absolute;left:1080px;top:713px;width:68px;height:71px;border-radius:5px;background:linear-gradient(#b6babe,#9b9fa3);box-shadow:inset 0 0 0 3px #84888c,0 1px 2px rgba(0,0,0,.3)}
+.usb:after{content:"";position:absolute;left:14px;top:10px;width:40px;height:50px;background:#2a2d31;border-radius:3px;box-shadow:inset 0 0 0 6px #6b6f73}
 /* screen chrome */
 #top{position:absolute;left:0;right:0;top:0;height:64px;background:linear-gradient(#22324a,#1a2638);border-bottom:2px solid #c8ccd2}
 #sig{position:absolute;left:18px;top:30px;display:flex;gap:2px;align-items:flex-end}#sig i{display:block;width:4px;background:#8a2a2a;border:1px solid #c44}
@@ -58,9 +61,12 @@ html,body{margin:0;height:100%;background:#1b1d21;overflow:hidden;font-family:"C
 </head>
 <body>
 <div id="wrap"><div id="dev">
+  <div id="plate"></div>
+  <div class="mnt" style="left:31px;top:154px"></div><div class="mnt" style="left:1215px;top:25px"></div><div class="mnt" style="left:1195px;top:739px"></div><div class="mnt" style="left:31px;top:800px"></div>
+  <div id="body2"></div>
   <div id="bez"></div>
-  <div class="dot" style="left:52px;top:327px"></div><div class="dot" style="left:62px;top:403px"></div><div class="dot" style="left:56px;top:640px"></div>
-  <div class="screw" style="left:1001px;top:597px"></div><div class="screw" style="left:952px;top:694px"></div>
+  <div class="dot" style="left:158px;top:426px"></div><div class="dot" style="left:158px;top:504px"></div><div class="dot" style="left:158px;top:734px"></div>
+  <div class="screw" style="left:1125px;top:686px"></div><div class="screw" style="left:1084px;top:797px"></div>
   <div class="usb"></div>
   <div id="scr">
     <div id="top">
@@ -73,7 +79,7 @@ html,body{margin:0;height:100%;background:#1b1d21;overflow:hidden;font-family:"C
     <svg id="spin" viewBox="0 0 46 52"><path d="M6 2h34v4c0 9-9 14-12 20 3 6 12 11 12 20v4H6v-4c0-9 9-14 12-20C15 20 6 15 6 6z" fill="#2a1418" stroke="#e2334a" stroke-width="3"/><path d="M14 44c3-6 6-8 9-10 3 2 6 4 9 10z" fill="#e2334a"/></svg>
   </div>
 </div></div>
-<div id="note">Symulator sterownika (wersja 5) – dane z rozkładu GTFS, zapowiedzi z bazy. <a href="./">← wróć do zapowiedzi</a></div>
+<div id="note">Symulator sterownika (wersja 6) – dane z rozkładu GTFS, zapowiedzi z bazy. <a href="./">← wróć do zapowiedzi</a></div>
 <script>
 'use strict';
 const $=s=>document.querySelector(s);
@@ -83,7 +89,7 @@ const hm=m=>{m=((m%1440)+1440)%1440;return pad(Math.floor(m/60))+':'+pad(m%60)};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 // ---------- scale the console to the window ----------
-function fit(){const s=Math.min(innerWidth/1060,(innerHeight-20)/790);$('#dev').style.transform=`scale(${s})`}
+function fit(){const s=Math.min(innerWidth/1270,(innerHeight-20)/880);$('#dev').style.transform=`scale(${s})`}
 addEventListener('resize',fit);fit();
 
 // ---------- sounds: key click and stop announcements ----------
