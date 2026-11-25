@@ -347,7 +347,7 @@ function stopsView(){
 
 // ---------- tabs ----------
 const TABS=[['','Linie'],['przystanki','Przystanki'],['specjalne','Specjalne'],['archiwum','Archiwum'],['kreator','Kreator'],['braki','Braki']];
-function tabsHTML(cur){return `<div class="tabs">${TABS.map(([h,t])=>`<button class="chip ${h===cur?'on':''}" data-tab="${h}">${t}</button>`).join('')}</div>`}
+function tabsHTML(cur){return `<div class="tabs">${TABS.map(([h,t])=>`<button class="chip ${h===cur?'on':''}" data-tab="${h}">${t}</button>`).join('')}<a class="chip" href="sterownik.html" target="sterownik" rel="noopener" style="text-decoration:none">Sterownik ↗</a></div>`}
 function bindTabs(){document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{location.hash=b.dataset.tab})}
 function isLineIntro(k){return /^Linia \S+$/.test(k)}
 function archStops(){return Object.fromEntries(Object.entries(DATA.archive||{}).filter(([k])=>!isLineIntro(k)))}
