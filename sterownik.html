@@ -73,7 +73,7 @@ html,body{margin:0;height:100%;background:#1b1d21;overflow:hidden;font-family:"C
     <svg id="spin" viewBox="0 0 46 52"><path d="M6 2h34v4c0 9-9 14-12 20 3 6 12 11 12 20v4H6v-4c0-9 9-14 12-20C15 20 6 15 6 6z" fill="#2a1418" stroke="#e2334a" stroke-width="3"/><path d="M14 44c3-6 6-8 9-10 3 2 6 4 9 10z" fill="#e2334a"/></svg>
   </div>
 </div></div>
-<div id="note">Symulator sterownika – dane z rozkładu GTFS, zapowiedzi z bazy. <a href="./">← wróć do zapowiedzi</a></div>
+<div id="note">Symulator sterownika (wersja 3) – dane z rozkładu GTFS, zapowiedzi z bazy. <a href="./">← wróć do zapowiedzi</a></div>
 <script>
 'use strict';
 const $=s=>document.querySelector(s);
@@ -136,14 +136,14 @@ function spinner(ms){return new Promise(r=>{$('#spin').style.display='block';set
 function render(){
   const v=S.view,b=$('#body');$('#slotB').style.display=v==='home'?'none':'block';
   if(v==='home'){b.innerHTML=
-    B('back',38,14,66,68,ICON.back)+
+    B('back',38,8,66,64,ICON.back)+
     B('cctv',272,4,62,62,ICON.cam+'<span style="margin-top:5px">cctv</span>')+B('tablica',342,4,92,62,ICON.board+'<span style="margin-top:6px">tablica</span>')+B('serwis',442,4,74,62,ICON.wrench+'<span style="margin-top:3px">serwis</span>')+
     B('eject',712,6,74,64,ICON.eject)+B('pa',720,128,66,58,ICON.pane('A'))+B('pb',720,200,66,58,ICON.pane('B'))+B('pg',720,272,66,58,ICON.grid)+
     `<div style="position:absolute;left:104px;top:148px;width:14px;height:300px;border:2px solid #c8ccd2"></div><div class="lbl" style="left:124px;top:180px">KPP 1</div><div class="lbl" style="left:392px;top:220px">KPP 2</div>`+
     B('ekonom',120,456,80,56,'<span style="display:block;width:10px;height:13px;background:#ccc;margin-bottom:4px"></span><small>ekonom.</small>')+
     B('status',300,456,62,56,'status<br>trasy')+B('zablokuj',432,456,88,56,ICON.lock+'<span style="margin-top:3px">zablokuj</span>')+B('brak',526,456,88,56,'brak<br>trasy')+
     B('wyl',724,456,66,56,ICON.x);}
-  else if(v==='menu'){b.innerHTML=B('back',38,14,66,68,ICON.back)+B('home',700,8,70,70,ICON.home)+
+  else if(v==='menu'){b.innerHTML=B('back',38,8,66,64,ICON.back)+B('home',700,8,70,70,ICON.home)+
     B('rozklad',262,6,78,58,'rozkład<br>jazdy')+B('specjal',346,6,78,58,'specjal.<br>trasa')+B('status',430,6,78,58,'status<br>trasy');}
   else if(v==='zp'||v==='kurs'||v==='start') wizard();
   bind();
@@ -170,16 +170,16 @@ function zpList(){
 }
 function wizard(){
   const b=$('#body'),v=S.view;
-  let h=B('back',12,22,62,62,ICON.back)+B('home',712,6,76,60,ICON.home)+tabs();
+  let h=B('back',38,8,66,64,ICON.back)+B('home',700,8,70,64,ICON.home)+tabs();
   if(v==='zp'){
     const L=zpList();S.zpSel=Math.min(S.zpSel,Math.max(0,L.length-1));
     const top=Math.max(0,Math.min(S.zpSel-2,L.length-5));
-    h+=infoPanel(500)+keypad()+`<div class="panel list" style="left:30px;top:212px;width:478px;height:204px;padding-top:24px;box-sizing:border-box">${L.slice(top,top+6).map((z,i)=>`<div class="row ${top+i===S.zpSel?'sel':''}" data-zi="${top+i}">${esc(z)}</div>`).join('')}</div>`+
+    h+=infoPanel(478)+keypad()+`<div class="panel list" style="left:30px;top:212px;width:478px;height:204px;padding-top:24px;box-sizing:border-box">${L.slice(top,top+6).map((z,i)=>`<div class="row ${top+i===S.zpSel?'sel':''}" data-zi="${top+i}">${esc(z)}</div>`).join('')}</div>`+
       B('ldown',30,448,60,56,ICON.down)+B('lup',96,448,60,56,ICON.up)+B('next',716,448,66,56,ICON.fwd);
   } else if(v==='kurs'){
     const T=S.duty?S.duty.t:[];S.kSel=Math.min(S.kSel,Math.max(0,T.length-1));
     const top=Math.max(0,Math.min(S.kSel-2,T.length-5));
-    h+=infoPanel(500)+keypad()+`<div class="panel list" style="left:30px;top:212px;width:478px;height:204px;padding-top:24px;box-sizing:border-box">${T.slice(top,top+6).map((t,i)=>{const n=top+i;return `<div class="row ${n===S.kSel?'sel':''}" data-ki="${n}" style="font-size:13px">(${n+1}) ${hm(t.s[0][0])} - ${hm(t.s[t.s.length-1][0])}&nbsp; ${esc(t.s[0][1])} - ${esc(t.s[t.s.length-1][1])}</div>`}).join('')}</div>`+
+    h+=infoPanel(478)+keypad()+`<div class="panel list" style="left:30px;top:212px;width:478px;height:204px;padding-top:24px;box-sizing:border-box">${T.slice(top,top+6).map((t,i)=>{const n=top+i;return `<div class="row ${n===S.kSel?'sel':''}" data-ki="${n}" style="font-size:13px">(${n+1}) ${hm(t.s[0][0])} - ${hm(t.s[t.s.length-1][0])}&nbsp; ${esc(t.s[0][1])} - ${esc(t.s[t.s.length-1][1])}</div>`}).join('')}</div>`+
       B('ldown',30,448,60,56,ICON.down)+B('lup',96,448,60,56,ICON.up)+B('prev',644,448,66,56,ICON.back)+B('next',716,448,66,56,ICON.fwd);
   } else {
     h+=infoPanel(712)+`<div class="big" id="cd" style="left:560px;top:108px;transform:translateX(-0%)"></div>`+
